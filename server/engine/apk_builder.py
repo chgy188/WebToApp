@@ -219,8 +219,10 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
+import android.graphics.Color;
 import android.util.Base64;
 import android.util.Log;
+import android.view.Gravity;
 import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
@@ -232,13 +234,19 @@ import android.webkit.PermissionRequest;
 import android.webkit.URLUtil;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.Button;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -259,6 +267,28 @@ public class M extends Activity {
     private static final String DESKTOP_USER_AGENT =
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
         + "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+    // Stock Android 9 WebView is Chrome 66 and cannot parse ES2020 optional
+    // chaining. Modern sites therefore never hydrate their lazy-image state,
+    // leaving placeholders on screen. Keep this snippet ES5-only so the old
+    // renderer can execute it: promote common lazy attributes, flip the
+    // data-loaded flag, and wake up lazy-load listeners.
+    private static final String IMAGE_FALLBACK_JS =
+        "(function(){"
+        + "var attrs=['data-src','data-lazy-src','data-original','data-echo','data-url'];"
+        + "var imgs=document.getElementsByTagName('img');"
+        + "for(var i=0;i<imgs.length;i++){var im=imgs[i];var src=im.getAttribute('src');"
+        + "if(!src||src.indexOf('data:image')===0){for(var j=0;j<attrs.length;j++){"
+        + "var v=im.getAttribute(attrs[j]);if(v){im.setAttribute('src',v);break;}}}"
+        + "im.setAttribute('loading','eager');im.style.opacity='1';im.style.visibility='visible';}"
+        + "var lazy=document.querySelectorAll('[data-loaded=false]');"
+        + "for(var k=0;k<lazy.length;k++){lazy[k].setAttribute('data-loaded','true');"
+        + "lazy[k].style.opacity='1';lazy[k].style.visibility='visible';}"
+        + "var cls=document.querySelectorAll('.lazyload,.lazy,.swiper-lazy,.lazy-image');"
+        + "for(var m=0;m<cls.length;m++){cls[m].setAttribute('loading','eager');"
+        + "cls[m].style.opacity='1';cls[m].style.visibility='visible';}"
+        + "try{window.dispatchEvent(new Event('scroll'));window.dispatchEvent(new Event('resize'));}catch(e){}"
+        + "})();";
 
     // Core ad/tracker network blocklist. Stored as a HashSet for O(1) lookups.
     // Subdomain matching is handled in isAdHost() — adding "doubleclick.net"
@@ -299,6 +329,10 @@ public class M extends Activity {
     ));
 
     private WebView webView;
+    private FrameLayout rootView;
+    private View errorView;
+    private TextView errorText;
+    private boolean errorVisible;
     private AppConfig config;
     private PendingDownload pendingDownload;
     private GeolocationPermissions.Callback pendingGeolocationCallback;
@@ -341,13 +375,57 @@ public class M extends Activity {
         getWindow().requestFeature(android.view.Window.FEATURE_NO_TITLE);
         config = loadConfig();
         webView = new WebView(this);
-        applyImmersiveMode();
+        rootView = new FrameLayout(this);
+        rootView.addView(webView, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT));
+        errorView = buildErrorView();
+        errorView.setVisibility(View.GONE);
+        rootView.addView(errorView, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT));
         webView.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 return handleNavigation(request != null && request.getUrl() != null ? request.getUrl().toString() : null);
             }
             @Override public boolean shouldOverrideUrlLoading(WebView view, String url) {
                 return handleNavigation(url);
+            }
+            // ── Friendly load errors (no more blank Chromium error page) ──
+            @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                hideError();
+                super.onPageStarted(view, url, favicon);
+            }
+            @Override public void onPageFinished(WebView view, String url) {
+                hideError();
+                super.onPageFinished(view, url);
+                applyImageFallback(view);
+            }
+            @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                // Sub-resource failures are normal (ads, analytics) — only a
+                // failed main document should replace the whole screen.
+                if (request != null && request.isForMainFrame() && error != null
+                        && error.getErrorCode() != -1 /* ERR_ABORTED */) {
+                    showError(request.getUrl(), error.getErrorCode(), error.getDescription().toString());
+                }
+                super.onReceivedError(view, request, error);
+            }
+            @Override public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
+                // Legacy path for API < 23; modern WebViews call the overload above.
+                if (errorCode != -1 && (failingUrl == null
+                        || failingUrl.equals(view.getUrl())
+                        || failingUrl.equals(config != null ? config.url : null))) {
+                    showError(failingUrl == null ? null : Uri.parse(failingUrl), errorCode, description);
+                }
+                super.onReceivedError(view, errorCode, description, failingUrl);
+            }
+            @Override public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
+                if (request != null && request.isForMainFrame() && response != null
+                        && response.getStatusCode() >= 400) {
+                    showError(request.getUrl(), response.getStatusCode(),
+                        "服务器返回 HTTP " + response.getStatusCode());
+                }
+                super.onReceivedHttpError(view, request, response);
             }
             // ── Ad blocker (modern API 21+) ───────────────────────────────
             // Intercepts every sub-resource request. Ad network hosts get an
@@ -399,6 +477,8 @@ public class M extends Activity {
         webView.addJavascriptInterface(new WebAppBridge(), "WebToApp");
         WebSettings s = webView.getSettings();
         s.setJavaScriptEnabled(true);
+        s.setLoadsImagesAutomatically(true);
+        s.setBlockNetworkImage(false);
         s.setDomStorageEnabled(true);
         s.setDatabaseEnabled(true);
         s.setAllowContentAccess(true);
@@ -426,12 +506,105 @@ public class M extends Activity {
             String launchUrl = config.url != null && !config.url.isEmpty() ? config.url : "about:blank";
             webView.loadUrl(launchUrl);
         } catch (Exception e) { webView.loadUrl("about:blank"); }
-        setContentView(webView);
+        setContentView(rootView);
         applyImmersiveMode();
     }
 
     private String sanitizeUserAgent(String ua) {
         return ua.replace("; wv", "").replace(" Version/4.0", "");
+    }
+
+    /**
+     * Some sites flip a data-loaded flag or copy data-src into src only from
+     * JavaScript that old WebViews cannot parse. Re-run a tiny ES5 repair pass
+     * once the document finishes and again after lazy content settles.
+     */
+    private void applyImageFallback(final WebView view) {
+        if (view == null) return;
+        try {
+            view.evaluateJavascript(IMAGE_FALLBACK_JS, null);
+            view.postDelayed(new Runnable() {
+                @Override public void run() {
+                    try { view.evaluateJavascript(IMAGE_FALLBACK_JS, null); }
+                    catch (Throwable ignored) {}
+                }
+            }, 800L);
+        } catch (Throwable ignored) {}
+    }
+
+    /** Dark, TV-friendly replacement for WebView's bare "webpage unavailable" page. */
+    private View buildErrorView() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setGravity(Gravity.CENTER);
+        box.setBackgroundColor(Color.parseColor("#141414"));
+        box.setPadding(64, 64, 64, 64);
+
+        TextView title = new TextView(this);
+        title.setText("网页暂时无法打开");
+        title.setTextColor(Color.parseColor("#FFFFFF"));
+        title.setTextSize(26);
+        title.setGravity(Gravity.CENTER);
+        title.getPaint().setFakeBoldText(true);
+        box.addView(title);
+
+        errorText = new TextView(this);
+        errorText.setTextColor(Color.parseColor("#B8B8B8"));
+        errorText.setTextSize(15);
+        errorText.setGravity(Gravity.CENTER);
+        errorText.setLineSpacing(6f, 1f);
+        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        textParams.topMargin = 32;
+        box.addView(errorText, textParams);
+
+        Button retry = new Button(this);
+        retry.setText("重新加载");
+        retry.setBackgroundColor(Color.parseColor("#2C2C2C"));
+        retry.setTextColor(Color.parseColor("#FFFFFF"));
+        retry.setFocusable(true);
+        retry.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                hideError();
+                if (webView != null) webView.reload();
+            }
+        });
+        LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        buttonParams.topMargin = 56;
+        box.addView(retry, buttonParams);
+
+        Button exit = new Button(this);
+        exit.setText("退出应用");
+        exit.setBackgroundColor(Color.parseColor("#2C2C2C"));
+        exit.setTextColor(Color.parseColor("#FFFFFF"));
+        exit.setFocusable(true);
+        exit.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { finish(); }
+        });
+        LinearLayout.LayoutParams exitParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        exitParams.topMargin = 24;
+        box.addView(exit, exitParams);
+        return box;
+    }
+
+    private void showError(Uri url, int code, String description) {
+        if (errorView == null) return;
+        String target = url != null ? url.toString() : "";
+        String detail = (description == null || description.isEmpty()) ? "未知错误" : description;
+        errorText.setText("网址：" + target + "\n错误码：" + code + "\n" + detail);
+        errorView.setVisibility(View.VISIBLE);
+        errorVisible = true;
+        Log.w("WebToAppTV", "load failed code=" + code + " url=" + target + " detail=" + detail);
+    }
+
+    private void hideError() {
+        if (errorView != null) errorView.setVisibility(View.GONE);
+        errorVisible = false;
     }
 
     /**
@@ -488,11 +661,20 @@ public class M extends Activity {
         }
     }
 
+    /** InputStream.readAllBytes() is API 33+; keep the template runnable on API 21. */
+    private static byte[] readAll(InputStream in) throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buf = new byte[8192];
+        int n;
+        while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
+        return out.toByteArray();
+    }
+
     private AppConfig loadConfig() {
         AppConfig loaded = new AppConfig();
         try {
             InputStream input = getAssets().open("webtoapp_config.json");
-            byte[] data = input.readAllBytes();
+            byte[] data = readAll(input);
             input.close();
             JSONObject json = new JSONObject(new String(data, StandardCharsets.UTF_8));
             loaded.url = json.optString("url", "about:blank").trim();
@@ -529,7 +711,7 @@ public class M extends Activity {
                 controller.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
                 controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
             }
-            webView.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+            rootView.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
                 @Override public android.view.WindowInsets onApplyWindowInsets(View v, android.view.WindowInsets insets) {
                     android.graphics.Insets bars = insets.getInsets(
                         WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars()
@@ -1069,6 +1251,8 @@ public class M extends Activity {
     }
 
     @Override public void onBackPressed() {
+        // On the error screen there is no useful history to walk back through.
+        if (errorVisible) { finish(); return; }
         if (webView != null && webView.canGoBack()) webView.goBack();
         else super.onBackPressed();
     }
@@ -1321,7 +1505,11 @@ class ApkBuilder:
             _run_tool(
                 # -proc:none skips the annotation-processor classpath scan,
                 # which is pure startup overhead for a processor-less build.
-                [javac, "-proc:none", "-source", "1.8", "-target", "1.8", "-bootclasspath", jar, "-d", str(classes), str(src / "M.java")],
+                # -encoding is required on Windows hosts, where javac's
+                # platform default (GBK) mangles the template's CJK text.
+                [javac, "-encoding", "UTF-8", "-proc:none", "-source", "1.8",
+                 "-target", "1.8", "-bootclasspath", jar, "-d", str(classes),
+                 str(src / "M.java")],
                 check=True,
                 capture_output=True,
             )

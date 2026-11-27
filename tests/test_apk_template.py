@@ -132,6 +132,85 @@ def test_download_failures_are_visible():
     assert "import android.util.Log;" in ACTIVITY_JAVA
 
 
+# ===== Friendly load-error screen =====
+#
+# WebView's built-in error page is bare, offers no exit, and left TV users
+# stuck when a proxy/DNS hiccup hit the first load. The template now draws
+# its own error view with retry + exit actions.
+
+
+def test_custom_error_screen_offers_retry_and_exit():
+    assert "private View errorView;" in ACTIVITY_JAVA
+    assert "private boolean errorVisible;" in ACTIVITY_JAVA
+    assert "private View buildErrorView()" in ACTIVITY_JAVA
+    assert 'retry.setText("重新加载")' in ACTIVITY_JAVA
+    assert 'exit.setText("退出应用")' in ACTIVITY_JAVA
+    assert "webView.reload()" in ACTIVITY_JAVA
+    assert "@Override public void onClick(View v) { finish(); }" in ACTIVITY_JAVA
+    assert "import android.widget.Button;" in ACTIVITY_JAVA
+    assert "import android.widget.FrameLayout;" in ACTIVITY_JAVA
+    assert "import android.widget.LinearLayout;" in ACTIVITY_JAVA
+    assert "import android.widget.TextView;" in ACTIVITY_JAVA
+
+
+def test_load_errors_replace_whole_screen_only_for_main_frame():
+    assert "import android.webkit.WebResourceError;" in ACTIVITY_JAVA
+    assert "onReceivedError(WebView view, WebResourceRequest request, WebResourceError error)" in ACTIVITY_JAVA
+    assert "request.isForMainFrame()" in ACTIVITY_JAVA
+    assert "response.getStatusCode() >= 400" in ACTIVITY_JAVA
+    assert "onPageFinished(WebView view, String url)" in ACTIVITY_JAVA
+    assert "hideError()" in ACTIVITY_JAVA
+
+
+def test_back_key_exits_from_error_screen():
+    assert "if (errorVisible) { finish(); return; }" in ACTIVITY_JAVA
+
+
+# ===== Legacy WebView image fallback =====
+#
+# Stock Android 9 WebView (Chrome 66) cannot parse optional chaining used by
+# modern sites, so lazy-image hydration never runs. The template injects an
+# ES5-only repair pass instead of requiring a system WebView upgrade.
+
+
+def test_image_fallback_is_wired_and_keeps_images_enabled():
+    assert "s.setLoadsImagesAutomatically(true);" in ACTIVITY_JAVA
+    assert "s.setBlockNetworkImage(false);" in ACTIVITY_JAVA
+    assert "private void applyImageFallback(final WebView view)" in ACTIVITY_JAVA
+    assert "applyImageFallback(view);" in ACTIVITY_JAVA
+    assert ACTIVITY_JAVA.count("view.evaluateJavascript(IMAGE_FALLBACK_JS, null)") >= 2
+
+
+def test_image_fallback_js_stays_es5_for_chrome_66():
+    marker = "private static final String IMAGE_FALLBACK_JS ="
+    assert marker in ACTIVITY_JAVA
+    block = ACTIVITY_JAVA.split(marker, 1)[1].split("// Core ad/tracker", 1)[0]
+    js = "".join(re.findall(r'"([^"]*)"', block))
+    assert "data-src" in js
+    assert "data-loaded=false" in js
+    assert "dispatchEvent(new Event('scroll'))" in js
+    for modern in ("=>", "?.", "??", "`", "const ", "let "):
+        assert modern not in js
+
+
+def test_template_build_compiles_source_as_utf8():
+    # Windows javac defaults to GBK and mangles the CJK text in ACTIVITY_JAVA.
+    import inspect
+
+    from server.engine.apk_builder import ApkBuilder
+
+    source = inspect.getsource(ApkBuilder._build_base_template)
+    assert '"-encoding", "UTF-8"' in source
+
+
+def test_config_reader_works_on_api_21():
+    # InputStream.readAllBytes() is API 33+, so a DEX built against a newer
+    # android.jar silently falls back to about:blank on Android 9 devices.
+    assert "input.readAllBytes()" not in ACTIVITY_JAVA
+    assert "private static byte[] readAll(InputStream in)" in ACTIVITY_JAVA
+    assert "import java.io.ByteArrayOutputStream;" in ACTIVITY_JAVA
+
+
 def test_notification_permission_nudged_not_blocking():
     assert '<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>' in MANIFEST_XML
     assert "REQ_NOTIFY" in ACTIVITY_JAVA
