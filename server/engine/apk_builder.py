@@ -1408,7 +1408,7 @@ public class M extends Activity {
         // Captions key works even when DPAD navigation is turned off. It
         // opens/closes the on-screen track picker injected above.
         if (config != null && config.tvMode && config.tvSubtitles
-                && webView != null && keyCode == KeyEvent.KEYCODE_CAPTIONS) {
+                && webView != null && event.getKeyCode() == KeyEvent.KEYCODE_CAPTIONS) {
             int action = event.getAction();
             if (action == KeyEvent.ACTION_DOWN) {
                 webView.evaluateJavascript(
@@ -1429,7 +1429,6 @@ public class M extends Activity {
     private static String tvMediaAction(int keyCode) {
         switch (keyCode) {
             case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
-            case KeyEvent.KEYCODE_MEDIA_TOGGLE:
                 return "toggle";
             case KeyEvent.KEYCODE_MEDIA_PLAY:
                 return "play";
@@ -1548,7 +1547,7 @@ class ApkBuilder:
     # silently serve a stale cached template — the old hand-bumped constant
     # relied on developers remembering to change it (AGENTS.md even documented
     # a manual cache-delete workaround for exactly that failure mode).
-    TEMPLATE_REVISION = "2026-11-27-tv-p2-1"
+    TEMPLATE_REVISION = "2026-11-27-tv-smoke-1"
 
     @classmethod
     def _template_revision(cls) -> str:
@@ -1592,13 +1591,20 @@ class ApkBuilder:
 
     def _find_tools(self, name):
         results = []
+        # Windows SDK tools carry .exe/.bat suffixes; checking only the bare
+        # name made local Windows builds silently fall back to the PWA shell.
+        names = [name]
+        if os.name == "nt":
+            names.extend([name + ".exe", name + ".bat"])
         if self.sdk:
             bt = Path(self.sdk) / "build-tools"
             if bt.exists():
                 for v in sorted(bt.iterdir(), reverse=True):
-                    f = v / name
-                    if f.exists():
-                        results.append(str(f))
+                    for candidate in names:
+                        f = v / candidate
+                        if f.exists():
+                            results.append(str(f))
+                            break
         path_tool = shutil.which(name)
         if path_tool and path_tool not in results:
             results.append(path_tool)
@@ -1697,7 +1703,7 @@ class ApkBuilder:
             tmp = Path(tmp_dir)
             src = tmp / "src" / "w"
             src.mkdir(parents=True)
-            (src / "M.java").write_text(ACTIVITY_JAVA)
+            (src / "M.java").write_text(ACTIVITY_JAVA, encoding="utf-8")
 
             manifest = tmp / "AndroidManifest.xml"
             manifest.write_text(
@@ -1706,7 +1712,8 @@ class ApkBuilder:
                     name=self.TEMPLATE_APP_NAME,
                     version_code=self.TEMPLATE_VERSION_CODE,
                     version_name=self.TEMPLATE_VERSION_NAME,
-                )
+                ),
+                encoding="utf-8",
             )
 
             mipmap = tmp / "res" / "mipmap"
@@ -1729,7 +1736,7 @@ class ApkBuilder:
             _run_tool(
                 # -proc:none skips the annotation-processor classpath scan,
                 # which is pure startup overhead for a processor-less build.
-                [javac, "-proc:none", "-source", "1.8", "-target", "1.8", "-bootclasspath", jar, "-d", str(classes), str(src / "M.java")],
+                [javac, "-proc:none", "-encoding", "UTF-8", "-source", "1.8", "-target", "1.8", "-bootclasspath", jar, "-d", str(classes), str(src / "M.java")],
                 check=True,
                 capture_output=True,
             )

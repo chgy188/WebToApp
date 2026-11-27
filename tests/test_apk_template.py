@@ -7,10 +7,13 @@ of the source stay intact rather than executing anything.
 
 import json
 import re
+import shutil
 import struct
+import subprocess
 
 import pytest
 
+import server.engine.apk_builder as apk_builder
 from server.engine.apk_builder import ACTIVITY_JAVA, MANIFEST_XML, ApkBuilder
 
 
@@ -318,3 +321,40 @@ def test_tv_subtitles_use_native_tracks_and_captions_key():
     assert "config.tvMode && config.tvSubtitles" in ACTIVITY_JAVA
     assert "KeyEvent.KEYCODE_CAPTIONS" in ACTIVITY_JAVA
     assert 'loaded.tvSubtitles = json.optBoolean("tv_subtitles", false);' in ACTIVITY_JAVA
+
+
+def test_template_uses_only_real_keyevent_constants():
+    # javac caught KEYCODE_MEDIA_TOGGLE, which is not an Android constant.
+    assert "KEYCODE_MEDIA_TOGGLE" not in ACTIVITY_JAVA
+    # The captions branch is outside the remote-key block, so it must read
+    # the key code from the event itself.
+    assert "event.getKeyCode() == KeyEvent.KEYCODE_CAPTIONS" in ACTIVITY_JAVA
+
+
+@pytest.mark.skipif(shutil.which("javac") is None, reason="javac not installed")
+def test_activity_java_compiles_when_toolchain_available(tmp_path):
+    builder = ApkBuilder()
+    jar = builder._find_jar()
+    if not jar:
+        pytest.skip("android.jar not available")
+    src = tmp_path / "M.java"
+    src.write_text(ACTIVITY_JAVA, encoding="utf-8")
+    classes = tmp_path / "classes"
+    classes.mkdir()
+    proc = subprocess.run(
+        [shutil.which("javac"), "-proc:none", "-encoding", "UTF-8",
+         "-source", "1.8", "-target", "1.8", "-bootclasspath", jar,
+         "-d", str(classes), str(src)],
+        capture_output=True, text=True, errors="replace",
+    )
+    assert proc.returncode == 0, (proc.stdout + proc.stderr)[:4000]
+
+
+def test_find_tools_handles_windows_suffixes(tmp_path, monkeypatch):
+    bt = tmp_path / "build-tools" / "35.0.0"
+    bt.mkdir(parents=True)
+    (bt / "aapt2.exe").write_bytes(b"")
+    builder = ApkBuilder()
+    monkeypatch.setattr(builder, "sdk", str(tmp_path))
+    monkeypatch.setattr(apk_builder.os, "name", "nt")
+    assert str(bt / "aapt2.exe") in builder._find_tools("aapt2")
