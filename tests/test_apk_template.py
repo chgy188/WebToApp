@@ -387,6 +387,38 @@ def test_tv_input_keypad_covers_phone_and_code_fields():
     assert "window.innerWidth*0.7" in bjs
 
 
+def test_tv_home_back_asks_before_exiting():
+    # A stray BACK on the landing page used to quit instantly; on a TV remote
+    # that is easy to hit by accident. It now asks first.
+    assert "private void showExitConfirm()" in ACTIVITY_JAVA
+    assert 'setText("退出应用")' in ACTIVITY_JAVA
+    assert 'setText("确定要退出吗？")' in ACTIVITY_JAVA
+    assert 'quit.setText("退出")' in ACTIVITY_JAVA
+    assert 'cancel.setText("取消")' in ACTIVITY_JAVA
+    assert "showExitConfirm();" in ACTIVITY_JAVA
+    # The confirmation must be an in-window overlay, not an AlertDialog: a dialog
+    # gets its own window whose DPAD keys the Activity branches swallowed, so
+    # the buttons were unreachable by remote.
+    assert "AlertDialog" not in ACTIVITY_JAVA
+    assert "private FrameLayout exitOverlay;" in ACTIVITY_JAVA
+    assert "private void hideExitConfirm()" in ACTIVITY_JAVA
+    assert "if (exitOverlay != null)" in ACTIVITY_JAVA
+    # While the overlay is up, BACK cancels and everything else reaches the
+    # focused button through normal view dispatch.
+    assert "hideExitConfirm();\n                return true;" in ACTIVITY_JAVA
+    assert "return super.dispatchKeyEvent(event);" in ACTIVITY_JAVA
+    # The page-side full-screen overlay path must defer to native, which is
+    # what decides "close the page" vs "ask to exit".
+    js = "".join(re.findall(
+        r'"((?:[^"\\]|\\.)*)"',
+        ACTIVITY_JAVA.split("private static final String TV_BACK_JS =", 1)[1].split(
+            "// Core ad/tracker network blocklist", 1)[0]))
+    assert "modal-page" in js
+    page_branch = js.split("if(fr.width>=window.innerWidth*0.7", 1)[1].split("return;", 1)[0]
+    assert "window.WebToApp.performBack(location.href)" in page_branch
+    assert "window.history.back()" not in page_branch
+
+
 def test_tv_native_fullscreen_routes_keys_and_has_exit_control():
     assert "private android.widget.Button fullscreenExitButton;" in ACTIVITY_JAVA
     assert "fullscreenExitButton.setOnClickListener" in ACTIVITY_JAVA

@@ -223,6 +223,9 @@ import android.provider.MediaStore;
 import android.util.Base64;
 import android.util.Log;
 import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
@@ -243,6 +246,8 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -603,7 +608,8 @@ public class M extends Activity {
         + "if(!dlg){state.sig='';state.tries=0;log('no-modal');"
         + "try{if(window.WebToApp)window.WebToApp.performBack(location.href);}catch(e){}return;}"
         + "var fr=dlg.getBoundingClientRect();"
-        + "if(fr.width>=window.innerWidth*0.7&&fr.height>=window.innerHeight*0.7){log('modal-page');esc();try{window.history.back();}catch(e){}return;}"
+        + "if(fr.width>=window.innerWidth*0.7&&fr.height>=window.innerHeight*0.7){log('modal-page');esc();"
+        + "try{if(window.WebToApp)window.WebToApp.performBack(location.href);}catch(e){}return;}"
         + "var sig=sigOf(dlg);"
         + "if(sig!==state.sig){state.sig=sig;state.tries=0;}"
         + "state.tries++;"
@@ -739,6 +745,7 @@ public class M extends Activity {
     private ValueCallback<Uri[]> pendingFileChoiceCallback;
     private FrameLayout fullscreenContainer;
     private android.widget.Button fullscreenExitButton;
+    private FrameLayout exitOverlay;
     private View customView;
     private WebChromeClient.CustomViewCallback customViewCallback;
 
@@ -1712,6 +1719,25 @@ public class M extends Activity {
             exitApp();
             return true;
         }
+        // The exit confirmation owns every key while it is up: BACK cancels it
+        // and everything else goes through normal view dispatch so the focused
+        // button receives DPAD/ENTER. Without this block the TV branches below
+        // would eat the keys and the buttons would be unreachable.
+        if (exitOverlay != null) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN
+                    && event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+                hideExitConfirm();
+                return true;
+            }
+            if (event.getAction() == KeyEvent.ACTION_DOWN
+                    && (event.getKeyCode() == KeyEvent.KEYCODE_MENU
+                        || event.getKeyCode() == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+                        || event.getKeyCode() == KeyEvent.KEYCODE_MEDIA_PREVIOUS
+                        || event.getKeyCode() == KeyEvent.KEYCODE_MEDIA_NEXT)) {
+                return true;
+            }
+            return super.dispatchKeyEvent(event);
+        }
         // In native WebView fullscreen the WebView is detached, so page JS can
         // no longer see these keys. Route them to the native player instead.
         if (customView != null) {
@@ -1973,7 +1999,9 @@ public class M extends Activity {
             else if (config != null && config.url != null) webView.loadUrl(config.url);
             return;
         }
-        super.onBackPressed();
+        // Leaving from the landing page drops the user out of the app, so ask
+        // first: a stray BACK on a TV remote should not kill the session.
+        showExitConfirm();
     }
 
     @Override public void onBackPressed() {
@@ -1996,6 +2024,120 @@ public class M extends Activity {
         } catch (Throwable ignored) {
             finish();
         }
+    }
+
+    private int dp(float value) {
+        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    /**
+     * Landing-page BACK asks before quitting: a stray BACK on a TV remote
+     * should not silently drop the session.
+     *
+     * Built as a view inside our own window instead of a system dialog. A
+     * dialog gets its own window, which on this device swallowed the DPAD
+     * keys the Activity routes, so the buttons were never reachable by
+     * remote — and the Activity kept seeing BACK anyway. An in-window
+     * overlay keeps every key on one dispatch path we control.
+     */
+    private void showExitConfirm() {
+        if (exitOverlay != null) return;
+        try {
+            FrameLayout overlay = new FrameLayout(this);
+            overlay.setBackgroundColor(0xCC000000);
+            overlay.setFocusable(true);
+
+            LinearLayout panel = new LinearLayout(this);
+            panel.setOrientation(LinearLayout.VERTICAL);
+            GradientDrawable panelBg = new GradientDrawable();
+            panelBg.setColor(0xFF1C1C1E);
+            panelBg.setCornerRadius(dp(16));
+            panel.setBackground(panelBg);
+            panel.setPadding(dp(28), dp(22), dp(28), dp(18));
+
+            TextView title = new TextView(this);
+            title.setText("退出应用");
+            title.setTextColor(Color.WHITE);
+            title.setTextSize(20);
+            title.setTypeface(Typeface.DEFAULT_BOLD);
+            panel.addView(title, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+            TextView message = new TextView(this);
+            message.setText("确定要退出吗？");
+            message.setTextColor(0xFFDDDDDD);
+            message.setTextSize(16);
+            LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            mlp.topMargin = dp(10);
+            panel.addView(message, mlp);
+
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.END);
+            LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            rlp.topMargin = dp(18);
+            panel.addView(row, rlp);
+
+            android.widget.Button quit = new android.widget.Button(this);
+            quit.setText("退出");
+            quit.setId(View.generateViewId());
+            quit.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View v) {
+                    hideExitConfirm();
+                    exitApp();
+                }
+            });
+
+            android.widget.Button cancel = new android.widget.Button(this);
+            cancel.setText("取消");
+            cancel.setId(View.generateViewId());
+            cancel.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View v) { hideExitConfirm(); }
+            });
+            quit.setNextFocusRightId(cancel.getId());
+            cancel.setNextFocusLeftId(quit.getId());
+
+            LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
+                dp(120), LinearLayout.LayoutParams.WRAP_CONTENT);
+            blp.rightMargin = dp(10);
+            row.addView(quit, blp);
+            row.addView(cancel, new LinearLayout.LayoutParams(
+                dp(120), LinearLayout.LayoutParams.WRAP_CONTENT));
+
+            FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(
+                dp(420), LinearLayout.LayoutParams.WRAP_CONTENT);
+            plp.gravity = Gravity.CENTER;
+            overlay.addView(panel, plp);
+
+            ViewGroup root = (ViewGroup) findViewById(android.R.id.content);
+            if (root == null) { exitApp(); return; }
+            root.addView(overlay, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            exitOverlay = overlay;
+
+            if (webView != null) webView.clearFocus();
+            quit.requestFocus();
+            overlay.post(new Runnable() {
+                @Override public void run() { if (exitOverlay != null) quit.requestFocus(); }
+            });
+        } catch (Throwable e) {
+            Log.w("WebToAppTV", "exit confirm failed", e);
+            exitApp();
+        }
+    }
+
+    /** Drop the confirm overlay and hand the remote back to the page. */
+    private void hideExitConfirm() {
+        if (exitOverlay == null) return;
+        FrameLayout overlay = exitOverlay;
+        exitOverlay = null;
+        try {
+            ViewGroup root = (ViewGroup) findViewById(android.R.id.content);
+            if (root != null) root.removeView(overlay);
+        } catch (Throwable ignored) {}
+        if (customView == null && webView != null) webView.requestFocus();
     }
 
     @Override protected void onDestroy() {
@@ -2080,7 +2222,7 @@ class ApkBuilder:
     # silently serve a stale cached template — the old hand-bumped constant
     # relied on developers remembering to change it (AGENTS.md even documented
     # a manual cache-delete workaround for exactly that failure mode).
-    TEMPLATE_REVISION = "2026-11-27-tv-escape-4"
+    TEMPLATE_REVISION = "2026-11-27-tv-exit-confirm-5"
 
     @classmethod
     def _template_revision(cls) -> str:
