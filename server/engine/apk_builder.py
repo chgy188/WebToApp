@@ -246,6 +246,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -266,6 +267,28 @@ public class M extends Activity {
     private static final String DESKTOP_USER_AGENT =
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
         + "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+    // Stock Android 9 WebView is Chrome 66 and cannot parse ES2020 optional
+    // chaining. Modern sites therefore never hydrate their lazy-image state,
+    // leaving placeholders on screen. Keep this snippet ES5-only so the old
+    // renderer can execute it: promote common lazy attributes, flip the
+    // data-loaded flag, and wake up lazy-load listeners.
+    private static final String IMAGE_FALLBACK_JS =
+        "(function(){"
+        + "var attrs=['data-src','data-lazy-src','data-original','data-echo','data-url'];"
+        + "var imgs=document.getElementsByTagName('img');"
+        + "for(var i=0;i<imgs.length;i++){var im=imgs[i];var src=im.getAttribute('src');"
+        + "if(!src||src.indexOf('data:image')===0){for(var j=0;j<attrs.length;j++){"
+        + "var v=im.getAttribute(attrs[j]);if(v){im.setAttribute('src',v);break;}}}"
+        + "im.setAttribute('loading','eager');im.style.opacity='1';im.style.visibility='visible';}"
+        + "var lazy=document.querySelectorAll('[data-loaded=false]');"
+        + "for(var k=0;k<lazy.length;k++){lazy[k].setAttribute('data-loaded','true');"
+        + "lazy[k].style.opacity='1';lazy[k].style.visibility='visible';}"
+        + "var cls=document.querySelectorAll('.lazyload,.lazy,.swiper-lazy,.lazy-image');"
+        + "for(var m=0;m<cls.length;m++){cls[m].setAttribute('loading','eager');"
+        + "cls[m].style.opacity='1';cls[m].style.visibility='visible';}"
+        + "try{window.dispatchEvent(new Event('scroll'));window.dispatchEvent(new Event('resize'));}catch(e){}"
+        + "})();";
 
     // Core ad/tracker network blocklist. Stored as a HashSet for O(1) lookups.
     // Subdomain matching is handled in isAdHost() — adding "doubleclick.net"
@@ -376,6 +399,7 @@ public class M extends Activity {
             @Override public void onPageFinished(WebView view, String url) {
                 hideError();
                 super.onPageFinished(view, url);
+                applyImageFallback(view);
             }
             @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 // Sub-resource failures are normal (ads, analytics) — only a
@@ -453,6 +477,8 @@ public class M extends Activity {
         webView.addJavascriptInterface(new WebAppBridge(), "WebToApp");
         WebSettings s = webView.getSettings();
         s.setJavaScriptEnabled(true);
+        s.setLoadsImagesAutomatically(true);
+        s.setBlockNetworkImage(false);
         s.setDomStorageEnabled(true);
         s.setDatabaseEnabled(true);
         s.setAllowContentAccess(true);
@@ -486,6 +512,24 @@ public class M extends Activity {
 
     private String sanitizeUserAgent(String ua) {
         return ua.replace("; wv", "").replace(" Version/4.0", "");
+    }
+
+    /**
+     * Some sites flip a data-loaded flag or copy data-src into src only from
+     * JavaScript that old WebViews cannot parse. Re-run a tiny ES5 repair pass
+     * once the document finishes and again after lazy content settles.
+     */
+    private void applyImageFallback(final WebView view) {
+        if (view == null) return;
+        try {
+            view.evaluateJavascript(IMAGE_FALLBACK_JS, null);
+            view.postDelayed(new Runnable() {
+                @Override public void run() {
+                    try { view.evaluateJavascript(IMAGE_FALLBACK_JS, null); }
+                    catch (Throwable ignored) {}
+                }
+            }, 800L);
+        } catch (Throwable ignored) {}
     }
 
     /** Dark, TV-friendly replacement for WebView's bare "webpage unavailable" page. */
@@ -617,11 +661,20 @@ public class M extends Activity {
         }
     }
 
+    /** InputStream.readAllBytes() is API 33+; keep the template runnable on API 21. */
+    private static byte[] readAll(InputStream in) throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buf = new byte[8192];
+        int n;
+        while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
+        return out.toByteArray();
+    }
+
     private AppConfig loadConfig() {
         AppConfig loaded = new AppConfig();
         try {
             InputStream input = getAssets().open("webtoapp_config.json");
-            byte[] data = input.readAllBytes();
+            byte[] data = readAll(input);
             input.close();
             JSONObject json = new JSONObject(new String(data, StandardCharsets.UTF_8));
             loaded.url = json.optString("url", "about:blank").trim();
@@ -1452,7 +1505,11 @@ class ApkBuilder:
             _run_tool(
                 # -proc:none skips the annotation-processor classpath scan,
                 # which is pure startup overhead for a processor-less build.
-                [javac, "-proc:none", "-source", "1.8", "-target", "1.8", "-bootclasspath", jar, "-d", str(classes), str(src / "M.java")],
+                # -encoding is required on Windows hosts, where javac's
+                # platform default (GBK) mangles the template's CJK text.
+                [javac, "-encoding", "UTF-8", "-proc:none", "-source", "1.8",
+                 "-target", "1.8", "-bootclasspath", jar, "-d", str(classes),
+                 str(src / "M.java")],
                 check=True,
                 capture_output=True,
             )
