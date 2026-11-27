@@ -782,10 +782,12 @@ class DistillerTvOptionTests(unittest.TestCase):
         options = Distiller()._feature_options({
             "feature-tv-mode": True,
             "feature-tv-auto-fullscreen": True,
+            "feature-tv-remote": True,
             "feature-tv-extra-hosts": ["video.example.com"],
         })
         self.assertTrue(options["feature-tv-mode"])
         self.assertTrue(options["feature-tv-auto-fullscreen"])
+        self.assertTrue(options["feature-tv-remote"])
         self.assertEqual(options["feature-tv-extra-hosts"], ["video.example.com"])
 
     def test_tv_extra_hosts_are_normalized(self):
@@ -800,4 +802,5 @@ class DistillerTvOptionTests(unittest.TestCase):
         options = Distiller()._feature_options({})
         self.assertFalse(options["feature-tv-mode"])
         self.assertFalse(options["feature-tv-auto-fullscreen"])
+        self.assertFalse(options["feature-tv-remote"])
         self.assertEqual(options["feature-tv-extra-hosts"], [])

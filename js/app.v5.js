@@ -135,6 +135,7 @@
   const desktopModeInput = document.getElementById('feature-desktop-mode');
   const tvModeInput = document.getElementById('feature-tv-mode');
   const tvAutoFullscreenInput = document.getElementById('feature-tv-auto-fullscreen');
+  const tvRemoteInput = document.getElementById('feature-tv-remote');
   const tvExtraHostsInput = document.getElementById('feature-tv-extra-hosts');
   const windowsWidthInput = document.getElementById('windows-window-width');
   const windowsHeightInput = document.getElementById('windows-window-height');
@@ -391,6 +392,7 @@
     const desktopMode = options['feature-desktop-mode'] === true || options.feature_desktop_mode === true;
     const tvMode = options['feature-tv-mode'] === true || options.feature_tv_mode === true;
     const tvAutoFullscreen = options['feature-tv-auto-fullscreen'] === true || options.feature_tv_auto_fullscreen === true;
+    const tvRemote = options['feature-tv-remote'] === true || options.feature_tv_remote === true;
     const rawTvHosts = options['feature-tv-extra-hosts'] != null
       ? options['feature-tv-extra-hosts']
       : options.feature_tv_extra_hosts;
@@ -411,6 +413,7 @@
       desktopMode,
       tvMode,
       tvAutoFullscreen,
+      tvRemote,
       tvExtraHosts,
       ...windowOpts,
     };
@@ -422,6 +425,7 @@
     desktopModeInput.checked = options.desktopMode;
     tvModeInput.checked = options.tvMode;
     tvAutoFullscreenInput.checked = options.tvAutoFullscreen;
+    tvRemoteInput.checked = options.tvRemote;
     syncInputValue(tvExtraHostsInput, options.tvExtraHosts.join(', '));
     syncInputValue(windowsWidthInput, options['windows-window-width'] ? String(options['windows-window-width']) : '');
     syncInputValue(windowsHeightInput, options['windows-window-height'] ? String(options['windows-window-height']) : '');
@@ -437,6 +441,7 @@
       'feature-desktop-mode': desktopModeInput.checked,
       'feature-tv-mode': tvModeInput.checked,
       'feature-tv-auto-fullscreen': tvAutoFullscreenInput.checked,
+      'feature-tv-remote': tvRemoteInput.checked,
       'feature-tv-extra-hosts': tvExtraHostsInput.value,
       'windows-window-width': windowsWidthInput.value,
       'windows-window-height': windowsHeightInput.value,
@@ -450,6 +455,7 @@
       'feature-desktop-mode': featureOptions.desktopMode,
       'feature-tv-mode': featureOptions.tvMode,
       'feature-tv-auto-fullscreen': featureOptions.tvAutoFullscreen,
+      'feature-tv-remote': featureOptions.tvRemote,
       'feature-tv-extra-hosts': featureOptions.tvExtraHosts,
       'windows-window-width': featureOptions['windows-window-width'],
       'windows-window-height': featureOptions['windows-window-height'],

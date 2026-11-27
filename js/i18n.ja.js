@@ -107,6 +107,8 @@ R('ja', {
     'config.tvModeDesc': 'Android TV 向けに最適化します。TV ホームに表示し、外部サイトへの遷移をブロックし、再生をアプリ内に維持します。',
     'config.tvAutoFullscreenTitle': '動画を自動で全画面表示',
     'config.tvAutoFullscreenDesc': '動画の再生を検出すると、自動的に全画面プレイヤーへ切り替えます。',
+    'config.tvRemoteTitle': 'リモコン操作',
+    'config.tvRemoteDesc': '方向キーでフォーカスを移動し、OK で選択、メディアキーで再生を制御します（再生/一時停止、早送り、巻き戻し）。',
     'config.tvHostsTitle': '追加の許可ドメイン（TV モード）',
     'config.tvHostsNote': 'TV アプリが遷移できる追加ドメイン（カンマ区切り）。開始サイトは常に許可されます。',
     'config.immersiveDesc': 'Android のステータスバーとナビゲーションバーを隠して、コンテンツを画面いっぱいに表示します。iPhone アプリはデフォルトで全画面の独立ウィンドウで起動します。',

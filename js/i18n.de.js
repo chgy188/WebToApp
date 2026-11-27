@@ -107,6 +107,8 @@ R('de', {
     'config.tvModeDesc': 'Für Android-TV-Boxen optimiert: erscheint auf dem TV-Startbildschirm, blockiert Navigation zu externen Seiten und hält die Wiedergabe in der App.',
     'config.tvAutoFullscreenTitle': 'Video automatisch im Vollbild',
     'config.tvAutoFullscreenDesc': 'Beim Start der Videowiedergabe wird automatisch auf den Vollbild-Player umgeschaltet.',
+    'config.tvRemoteTitle': 'Fernbedienung',
+    'config.tvRemoteDesc': 'Mit dem Steuerkreuz navigieren, mit OK auswählen und die Wiedergabe über Medientasten steuern (Play/Pause, Zurück, Vor).',
     'config.tvHostsTitle': 'Zusätzlich erlaubte Domains (TV-Modus)',
     'config.tvHostsNote': 'Zusätzliche Domains, zu denen die TV-App navigieren darf (durch Kommas getrennt). Die Startseite ist immer erlaubt.',
     'config.immersiveDesc': 'Blendet die Android-Status- und -Navigationsleiste aus, damit der Inhalt den Bildschirm ausfüllt. iPhone-Apps starten ohnehin standardmäßig im Vollbild.',

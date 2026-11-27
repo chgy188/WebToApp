@@ -262,12 +262,41 @@ def test_tv_options_reach_apk_config():
     cfg = json.loads(builder._config_json("https://example.com", {
         "feature-tv-mode": True,
         "feature-tv-auto-fullscreen": True,
+        "feature-tv-remote": True,
         "feature-tv-extra-hosts": ["cdn.example.net"],
     }))
     assert cfg["tv_mode"] is True
     assert cfg["tv_auto_fullscreen"] is True
+    assert cfg["tv_remote"] is True
     assert cfg["tv_nav_hosts"] == ["cdn.example.net"]
     default = json.loads(builder._config_json("https://example.com", {}))
     assert default["tv_mode"] is False
     assert default["tv_auto_fullscreen"] is False
+    assert default["tv_remote"] is False
     assert default["tv_nav_hosts"] == []
+
+
+def test_tv_remote_keys_are_consumed_by_activity():
+    assert "import android.view.KeyEvent;" in ACTIVITY_JAVA
+    assert "public boolean dispatchKeyEvent(KeyEvent event)" in ACTIVITY_JAVA
+    assert "private static boolean isDpadKey(int keyCode)" in ACTIVITY_JAVA
+    assert "private static String tvMediaAction(int keyCode)" in ACTIVITY_JAVA
+    assert "webView.setFocusableInTouchMode(true);" in ACTIVITY_JAVA
+    assert "webView.requestFocus();" in ACTIVITY_JAVA
+    for action in ("toggle", "play", "pause", "ff", "rw", "next", "prev", "stop"):
+        assert f'return "{action}";' in ACTIVITY_JAVA
+    assert "config.tvMode && config.tvRemote" in ACTIVITY_JAVA
+    assert "view.evaluateJavascript(TV_REMOTE_JS, null)" in ACTIVITY_JAVA
+
+
+def test_tv_remote_js_stays_quote_simple():
+    block = ACTIVITY_JAVA.split(
+        "private static final String TV_REMOTE_JS =", 1)[1].split(
+        "private static final Set<String> AD_HOSTS", 1)[0]
+    js = "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', block))
+    assert '"' not in js
+    for helper in ("__wtaTvMoveFocus", "__wtaTvActivate", "__wtaTvMedia"):
+        assert helper in js
+    assert "outline-offset:2px" in js
+    assert "currentTime=Math.min(dur,v.currentTime+10)" in js
+    assert "currentTime=Math.max(0,v.currentTime-10)" in js

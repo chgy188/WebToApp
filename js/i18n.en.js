@@ -131,6 +131,8 @@ R('en', {
     'config.tvModeDesc': 'Optimize for Android TV boxes: appear on the TV home screen, block off-site navigation and keep playback in the app.',
     'config.tvAutoFullscreenTitle': 'Auto fullscreen video',
     'config.tvAutoFullscreenDesc': 'When a video starts playing, switch the player to fullscreen automatically.',
+    'config.tvRemoteTitle': 'Remote control',
+    'config.tvRemoteDesc': 'Navigate with DPAD, select with OK, and control playback with media keys (play/pause, rewind, fast forward).',
     'config.tvHostsTitle': 'Extra allowed hosts (TV mode)',
     'config.tvHostsNote': 'Additional domains the TV app may navigate to (comma separated). The launch site is always allowed.',
     'config.immersiveDesc': 'Hide the Android status and navigation bars so content fills the screen. iPhone apps already launch fullscreen by default.',

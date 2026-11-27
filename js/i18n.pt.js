@@ -107,6 +107,8 @@ R('pt', {
     'config.tvModeDesc': 'Otimizado para caixas Android TV: aparece na tela inicial da TV, bloqueia navegação para sites externos e mantém a reprodução no app.',
     'config.tvAutoFullscreenTitle': 'Vídeo em tela cheia automática',
     'config.tvAutoFullscreenDesc': 'Quando um vídeo começa a reproduzir, alterna automaticamente para o player em tela cheia.',
+    'config.tvRemoteTitle': 'Controle por remoto',
+    'config.tvRemoteDesc': 'Navegue com as setas, selecione com OK e controle a reprodução com as teclas de mídia (reproduzir/pausar, retroceder, avançar).',
     'config.tvHostsTitle': 'Domínios permitidos adicionais (modo TV)',
     'config.tvHostsNote': 'Domínios adicionais para os quais o app de TV pode navegar (separados por vírgula). O site inicial é sempre permitido.',
     'config.immersiveDesc': 'Oculta a barra de status e de navegação do Android para o conteúdo preencher a tela. Os apps de iPhone já abrem em tela cheia por padrão.',

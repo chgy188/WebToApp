@@ -131,6 +131,8 @@ R('zh', {
     'config.tvModeDesc': '面向安卓电视盒子优化：出现在电视桌面、限制站外跳转、播放留在本应用内。',
     'config.tvAutoFullscreenTitle': '视频自动全屏',
     'config.tvAutoFullscreenDesc': '检测到视频开始播放时自动切换到全屏播放器。',
+    'config.tvRemoteTitle': '遥控器操控',
+    'config.tvRemoteDesc': '用方向键移动焦点、确定键选择，并用媒体键控制播放（播放/暂停、快退、快进）。',
     'config.tvHostsTitle': '额外允许的域名（TV 模式）',
     'config.tvHostsNote': '允许 TV 应用跳转的其他域名（逗号分隔），起始站点始终允许。',
     'config.immersiveDesc': '隐藏 Android 状态栏与导航栏，让内容铺满屏幕。iPhone 应用默认即以全屏独立窗口启动。',

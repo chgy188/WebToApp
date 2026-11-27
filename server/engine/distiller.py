@@ -480,6 +480,9 @@ class Distiller:
             "feature-tv-auto-fullscreen": bool(
                 raw.get("feature-tv-auto-fullscreen") or raw.get("feature_tv_auto_fullscreen")
             ),
+            "feature-tv-remote": bool(
+                raw.get("feature-tv-remote") or raw.get("feature_tv_remote")
+            ),
             "feature-tv-extra-hosts": self._nav_host_list(raw),
         }
         # Desktop browser-app shells (Windows .bat, Linux .desktop) honor

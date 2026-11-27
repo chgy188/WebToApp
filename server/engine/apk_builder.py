@@ -222,6 +222,7 @@ import android.provider.MediaStore;
 import android.util.Base64;
 import android.util.Log;
 import android.graphics.Color;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
@@ -290,6 +291,85 @@ public class M extends Activity {
         + "if(tries<120)setTimeout(tick,500);"
         + "};"
         + "tick();"
+        + "})();";
+
+    // TV remote: give non-TV pages a visible focus cursor, geometric DPAD
+    // navigation and media-key handling. Kept quote-simple like the script
+    // above so the Java template needs no extra escaping.
+    private static final String TV_REMOTE_JS =
+        "(function(){"
+        + "if(window.__wtaTvRemoteInstalled)return;"
+        + "window.__wtaTvRemoteInstalled=true;"
+        + "var s=document.createElement('style');"
+        + "s.id='__wtaTvFocusStyle';"
+        + "s.textContent=':focus{outline:3px solid #ffb300!important;outline-offset:2px!important}';"
+        + "if(document.head&&!document.getElementById('__wtaTvFocusStyle'))document.head.appendChild(s);"
+        + "var candidates=function(){"
+        + "var nodes=document.querySelectorAll('a,button,input,select,textarea,video,[tabindex],[role=button],[role=link]');"
+        + "var out=[];"
+        + "for(var i=0;i<nodes.length;i++){"
+        + "var el=nodes[i];"
+        + "if(el.disabled||el.getAttribute('aria-hidden')==='true')continue;"
+        + "var r=el.getBoundingClientRect();"
+        + "if(r.width<4||r.height<4)continue;"
+        + "var st=window.getComputedStyle(el);"
+        + "if(st.visibility==='hidden'||st.display==='none'||st.opacity==='0')continue;"
+        + "out.push({el:el,r:r});"
+        + "}"
+        + "return out;"
+        + "};"
+        + "var focusEl=function(el){"
+        + "el.focus();"
+        + "try{el.scrollIntoView({block:'center',inline:'center'});}catch(e){}"
+        + "};"
+        + "var first=candidates();"
+        + "if(first.length)focusEl(first[0].el);"
+        + "window.__wtaTvMoveFocus=function(dx,dy){"
+        + "var list=candidates();"
+        + "if(!list.length)return;"
+        + "var cur=document.activeElement;"
+        + "var idx=-1;"
+        + "for(var i=0;i<list.length;i++){if(list[i].el===cur){idx=i;break;}}"
+        + "if(idx<0){focusEl(list[0].el);return;}"
+        + "var cr=list[idx].r;"
+        + "var cx=cr.left+cr.width/2,cy=cr.top+cr.height/2;"
+        + "var best=-1,score=Infinity;"
+        + "for(var j=0;j<list.length;j++){"
+        + "if(j===idx)continue;"
+        + "var r=list[j].r;"
+        + "var nx=r.left+r.width/2,ny=r.top+r.height/2;"
+        + "var main=(dx!==0)?(nx-cx)*dx:(ny-cy)*dy;"
+        + "if(main<=0)continue;"
+        + "var cross=(dx!==0)?Math.abs(ny-cy):Math.abs(nx-cx);"
+        + "var s=main+cross*2.5;"
+        + "if(s<score){score=s;best=j;}"
+        + "}"
+        + "if(best>=0)focusEl(list[best].el);"
+        + "};"
+        + "window.__wtaTvActivate=function(){"
+        + "var el=document.activeElement;"
+        + "if(el&&el!==document.body&&el!==document.documentElement){try{el.click();}catch(e){}}"
+        + "};"
+        + "window.__wtaTvMedia=function(action){"
+        + "var v=null;"
+        + "var fs=document.fullscreenElement||document.webkitFullscreenElement;"
+        + "if(fs){v=(fs.tagName==='VIDEO')?fs:fs.querySelector('video');}"
+        + "if(!v){var all=document.querySelectorAll('video');"
+        + "for(var i=0;i<all.length;i++){if(!all[i].paused&&!all[i].ended){v=all[i];break;}}}"
+        + "if(!v){var list=document.querySelectorAll('video');if(list.length)v=list[0];}"
+        + "if(!v)return;"
+        + "var dur=isFinite(v.duration)?v.duration:Infinity;"
+        + "try{"
+        + "if(action==='toggle'){if(v.paused)v.play();else v.pause();}"
+        + "else if(action==='play'){v.play();}"
+        + "else if(action==='pause'){v.pause();}"
+        + "else if(action==='ff'){v.currentTime=Math.min(dur,v.currentTime+10);}"
+        + "else if(action==='rw'){v.currentTime=Math.max(0,v.currentTime-10);}"
+        + "else if(action==='next'){v.currentTime=Math.min(dur,v.currentTime+30);}"
+        + "else if(action==='prev'){v.currentTime=Math.max(0,v.currentTime-30);}"
+        + "else if(action==='stop'){v.pause();v.currentTime=0;}"
+        + "}catch(e){}"
+        + "};"
         + "})();";
 
     // Core ad/tracker network blocklist. Stored as a HashSet for O(1) lookups.
@@ -376,6 +456,9 @@ public class M extends Activity {
         getWindow().requestFeature(android.view.Window.FEATURE_NO_TITLE);
         config = loadConfig();
         webView = new WebView(this);
+        webView.setFocusable(true);
+        webView.setFocusableInTouchMode(true);
+        webView.requestFocus();
         applyImmersiveMode();
         webView.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
@@ -399,6 +482,9 @@ public class M extends Activity {
                 }
                 if (config != null && config.tvMode && config.tvAutoFullscreen) {
                     view.evaluateJavascript(TV_AUTO_FULLSCREEN_JS, null);
+                }
+                if (config != null && config.tvMode && config.tvRemote) {
+                    view.evaluateJavascript(TV_REMOTE_JS, null);
                 }
             }
             // ── Ad blocker (modern API 21+) ───────────────────────────────
@@ -568,6 +654,7 @@ public class M extends Activity {
             }
             loaded.tvMode = json.optBoolean("tv_mode", false);
             loaded.tvAutoFullscreen = json.optBoolean("tv_auto_fullscreen", false);
+            loaded.tvRemote = json.optBoolean("tv_remote", false);
             JSONArray tvHosts = json.optJSONArray("tv_nav_hosts");
             if (tvHosts != null) {
                 for (int i = 0; i < tvHosts.length(); i++) {
@@ -1202,6 +1289,86 @@ public class M extends Activity {
         }
     }
 
+    /**
+     * TV remote: consume DPAD/ENTER/media keys in TV mode and drive the
+     * injected page helpers. Returning true keeps WebView from also handling
+     * the same key, which would move focus twice or click twice.
+     */
+    @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        if (config != null && config.tvMode && config.tvRemote && webView != null) {
+            int action = event.getAction();
+            int keyCode = event.getKeyCode();
+            if (action == KeyEvent.ACTION_DOWN || action == KeyEvent.ACTION_UP) {
+                if (isDpadKey(keyCode)) {
+                    if (action == KeyEvent.ACTION_DOWN) {
+                        int dx = 0;
+                        int dy = 0;
+                        if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) dx = -1;
+                        else if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) dx = 1;
+                        else if (keyCode == KeyEvent.KEYCODE_DPAD_UP) dy = -1;
+                        else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) dy = 1;
+                        webView.evaluateJavascript(
+                            "typeof __wtaTvMoveFocus==='function'&&__wtaTvMoveFocus(" + dx + "," + dy + ")",
+                            null);
+                    }
+                    return true;
+                }
+                if (keyCode == KeyEvent.KEYCODE_ENTER
+                        || keyCode == KeyEvent.KEYCODE_DPAD_CENTER
+                        || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER) {
+                    if (action == KeyEvent.ACTION_DOWN) {
+                        webView.evaluateJavascript(
+                            "typeof __wtaTvActivate==='function'&&__wtaTvActivate()", null);
+                    }
+                    return true;
+                }
+                String mediaAction = tvMediaAction(keyCode);
+                if (mediaAction != null) {
+                    if (action == KeyEvent.ACTION_DOWN) {
+                        webView.evaluateJavascript(
+                            "typeof __wtaTvMedia==='function'&&__wtaTvMedia('" + mediaAction + "')",
+                            null);
+                    }
+                    return true;
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    private static boolean isDpadKey(int keyCode) {
+        return keyCode == KeyEvent.KEYCODE_DPAD_UP
+            || keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+            || keyCode == KeyEvent.KEYCODE_DPAD_LEFT
+            || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT;
+    }
+
+    private static String tvMediaAction(int keyCode) {
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+            case KeyEvent.KEYCODE_MEDIA_TOGGLE:
+                return "toggle";
+            case KeyEvent.KEYCODE_MEDIA_PLAY:
+                return "play";
+            case KeyEvent.KEYCODE_MEDIA_PAUSE:
+                return "pause";
+            case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD:
+            case KeyEvent.KEYCODE_MEDIA_SKIP_FORWARD:
+                return "ff";
+            case KeyEvent.KEYCODE_MEDIA_REWIND:
+            case KeyEvent.KEYCODE_MEDIA_SKIP_BACKWARD:
+                return "rw";
+            case KeyEvent.KEYCODE_MEDIA_NEXT:
+                return "next";
+            case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
+                return "prev";
+            case KeyEvent.KEYCODE_MEDIA_STOP:
+                return "stop";
+            default:
+                return null;
+        }
+    }
+
     @Override public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) applyImmersiveMode();
@@ -1248,6 +1415,7 @@ public class M extends Activity {
         // http(s) navigation to the launch host plus tvNavHosts.
         boolean tvMode = false;
         boolean tvAutoFullscreen = false;
+        boolean tvRemote = false;
         Set<String> tvNavHosts = new HashSet<>();
         String startHost = null;
     }
@@ -1296,7 +1464,7 @@ class ApkBuilder:
     # silently serve a stale cached template — the old hand-bumped constant
     # relied on developers remembering to change it (AGENTS.md even documented
     # a manual cache-delete workaround for exactly that failure mode).
-    TEMPLATE_REVISION = "2026-11-27-tv-p0-1"
+    TEMPLATE_REVISION = "2026-11-27-tv-p1-1"
 
     @classmethod
     def _template_revision(cls) -> str:
@@ -1973,6 +2141,9 @@ class ApkBuilder:
             ),
             "tv_auto_fullscreen": bool(
                 raw.get("feature-tv-auto-fullscreen") or raw.get("feature_tv_auto_fullscreen")
+            ),
+            "tv_remote": bool(
+                raw.get("feature-tv-remote") or raw.get("feature_tv_remote")
             ),
             "tv_nav_hosts": list(
                 raw.get("feature-tv-extra-hosts") or raw.get("feature_tv_extra_hosts") or []

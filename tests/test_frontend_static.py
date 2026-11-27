@@ -29,6 +29,8 @@ NEW_KEYS = (
     "config.tvAutoFullscreenDesc",
     "config.tvHostsTitle",
     "config.tvHostsNote",
+    "config.tvRemoteTitle",
+    "config.tvRemoteDesc",
 )
 
 
@@ -92,6 +94,7 @@ class TvOptionFormTests(unittest.TestCase):
         for field_id in (
             "feature-tv-mode",
             "feature-tv-auto-fullscreen",
+            "feature-tv-remote",
             "feature-tv-extra-hosts",
         ):
             self.assertIn(f'id="{field_id}"', html)
@@ -731,7 +734,7 @@ class StreamingFirstLoadTests(unittest.TestCase):
 
     def test_streaming_assets_are_cache_busted(self):
         self.assertIn("css/style.css?v=20261118-board1", self.html)
-        self.assertIn("js/app.v5.js?v=20261127-tv-p0", self.html)
+        self.assertIn("js/app.v5.js?v=20261127-tv-p1", self.html)
 
     def test_feedback_board_is_wired(self):
         # #248: nav entry + modal + the board module in app.v5.js.
