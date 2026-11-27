@@ -351,6 +351,42 @@ def test_tv_back_held_exits_app_as_last_resort():
     assert "event.getRepeatCount() >= 12" in ACTIVITY_JAVA
 
 
+def test_tv_input_keypad_covers_phone_and_code_fields():
+    # A TV remote cannot drive the system IME, so the site's phone / code
+    # fields were focusable but untypeable. Focusing one must open an injected
+    # DPAD-operable numeric keypad.
+    block = ACTIVITY_JAVA.split(
+        "private static final String TV_INPUT_JS =", 1)[1].split(
+        "// Core ad/tracker network blocklist", 1)[0]
+    js = "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', block))
+    assert '"' not in js
+    assert "window.__wtaTvOpenPad=function(el)" in js
+    assert "window.__wtaTvClosePad=function()" in js
+    assert "window.__wtaTvPadCandidates=function()" in js
+    assert "Object.getOwnPropertyDescriptor(el.constructor.prototype,'value')" in js
+    assert "dispatchEvent(new Event('input',{bubbles:true}))" in js
+    for label in ("'删除'", "'清空'", "'完成'"):
+        assert label in js
+    assert "view.evaluateJavascript(TV_INPUT_JS, null)" in ACTIVITY_JAVA
+    remote = ACTIVITY_JAVA.split(
+        "private static final String TV_REMOTE_JS =", 1)[1].split(
+        "// TV subtitles:", 1)[0]
+    rjs = "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', remote))
+    assert "if(window.__wtaTvOpenPad&&window.__wtaTvOpenPad(el))return;" in rjs
+    assert "if(window.__wtaTvPadEl&&window.__wtaTvPadCandidates)" in rjs
+    # While a popup is open, DPAD must stay inside it instead of wandering
+    # over the page behind the mask.
+    assert "typeof window.__wtaTvFindModal==='function'" in rjs
+    back = ACTIVITY_JAVA.split(
+        "private static final String TV_BACK_JS =", 1)[1].split(
+        "// Core ad/tracker network blocklist", 1)[0]
+    bjs = "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', back))
+    assert "window.__wtaTvClosePad&&window.__wtaTvClosePad()" in bjs
+    # A full-screen overlay (login route) must leave on the first BACK, not
+    # spend three presses re-trying close buttons that do not exist.
+    assert "window.innerWidth*0.7" in bjs
+
+
 def test_tv_native_fullscreen_routes_keys_and_has_exit_control():
     assert "private android.widget.Button fullscreenExitButton;" in ACTIVITY_JAVA
     assert "fullscreenExitButton.setOnClickListener" in ACTIVITY_JAVA

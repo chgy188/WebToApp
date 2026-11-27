@@ -315,8 +315,14 @@ public class M extends Activity {
         + "s.id='__wtaTvFocusStyle';"
         + "s.textContent=':focus{outline:3px solid #ffb300!important;outline-offset:2px!important}';"
         + "if(document.head&&!document.getElementById('__wtaTvFocusStyle'))document.head.appendChild(s);"
+        + "var SEL='a,button,input,select,textarea,video,[tabindex],[role=button],[role=link],div,span,li';"
         + "var candidates=function(){"
-        + "var nodes=document.querySelectorAll('a,button,input,select,textarea,video,[tabindex],[role=button],[role=link],div,span,li');"
+        + "if(window.__wtaTvPadEl&&window.__wtaTvPadCandidates)return window.__wtaTvPadCandidates();"
+        + "var m=(typeof window.__wtaTvFindModal==='function')?window.__wtaTvFindModal():null;"
+        + "if(m){var mr=m.getBoundingClientRect();"
+        + "if(mr.width>=window.innerWidth*0.85&&mr.height>=window.innerHeight*0.85)m=null;}"
+        + "var nodes=m?m.querySelectorAll(SEL):document.querySelectorAll(SEL);"
+        + "if(m&&!nodes.length)nodes=document.querySelectorAll(SEL);"
         + "var out=[];"
         + "for(var i=0;i<nodes.length;i++){"
         + "var el=nodes[i];"
@@ -393,7 +399,9 @@ public class M extends Activity {
         + "};"
         + "window.__wtaTvActivate=function(){"
         + "var el=document.activeElement;"
-        + "if(el&&el!==document.body&&el!==document.documentElement){try{el.click();}catch(e){}}"
+        + "if(!el||el===document.body||el===document.documentElement)return;"
+        + "if(window.__wtaTvOpenPad&&window.__wtaTvOpenPad(el))return;"
+        + "try{el.click();}catch(e){}"
         + "};"
         + "window.__wtaTvMedia=function(action){"
         + "var v=null;"
@@ -588,10 +596,14 @@ public class M extends Activity {
         + "return false;"
         + "};"
         + "var state={sig:'',tries:0};"
+        + "window.__wtaTvFindModal=findModal;"
         + "window.__wtaTvBack=function(){"
+        + "if(window.__wtaTvClosePad&&window.__wtaTvClosePad()){log('pad-close');return;}"
         + "var dlg=findModal();"
         + "if(!dlg){state.sig='';state.tries=0;log('no-modal');"
         + "try{if(window.WebToApp)window.WebToApp.performBack(location.href);}catch(e){}return;}"
+        + "var fr=dlg.getBoundingClientRect();"
+        + "if(fr.width>=window.innerWidth*0.7&&fr.height>=window.innerHeight*0.7){log('modal-page');esc();try{window.history.back();}catch(e){}return;}"
         + "var sig=sigOf(dlg);"
         + "if(sig!==state.sig){state.sig=sig;state.tries=0;}"
         + "state.tries++;"
@@ -600,6 +612,81 @@ public class M extends Activity {
         + "if(state.tries===3){log('modal-history');esc();try{window.history.back();}catch(e){}return;}"
         + "log('modal-giveup');state.sig='';state.tries=0;esc();"
         + "try{if(window.WebToApp)window.WebToApp.performBack(location.href);}catch(e){}"
+        + "};"
+        + "})();";
+
+    // TV text input. A TV remote cannot drive the system IME: the login page's
+    // phone / verification-code fields become focusable but unusable. Focusing
+    // such a field opens an injected numeric keypad that DPAD can operate, and
+    // writes through the page's native value setter so React/Vue state updates.
+    private static final String TV_INPUT_JS =
+        "(function(){"
+        + "if(window.__wtaTvPadInstalled)return;"
+        + "window.__wtaTvPadInstalled=true;"
+        + "var pad=null,target=null;"
+        + "var canPad=function(el){"
+        + "if(!el||!el.tagName)return false;"
+        + "var tag=el.tagName.toLowerCase();"
+        + "if(tag!=='input'&&tag!=='textarea')return false;"
+        + "var t=(el.getAttribute('type')||'').toLowerCase();"
+        + "if(t==='tel'||t==='number')return true;"
+        + "var ph=(el.getAttribute('placeholder')||'')+' '+(el.getAttribute('name')||'');"
+        + "if(/手机|电话|验证码|phone|code|mobile/i.test(ph))return true;"
+        + "var ml=parseInt(el.getAttribute('maxlength'),10);"
+        + "if(!isNaN(ml)&&ml>0&&ml<=11)return true;"
+        + "return false;"
+        + "};"
+        + "var setVal=function(el,v){"
+        + "try{var d=Object.getOwnPropertyDescriptor(el.constructor.prototype,'value');"
+        + "if(d&&d.set)d.set.call(el,v);else el.value=v;}catch(e){try{el.value=v;}catch(x){}}"
+        + "try{if(el._valueTracker)el._valueTracker.setValue('');}catch(e){}"
+        + "try{el.dispatchEvent(new Event('input',{bubbles:true}));}catch(e){}"
+        + "try{el.dispatchEvent(new Event('change',{bubbles:true}));}catch(e){}"
+        + "};"
+        + "var close=function(){"
+        + "var e=target;"
+        + "if(pad&&pad.parentNode)pad.parentNode.removeChild(pad);"
+        + "pad=null;target=null;window.__wtaTvPadEl=null;"
+        + "try{if(e&&document.body&&document.body.contains(e))e.focus();}catch(x){}"
+        + "};"
+        + "var refresh=function(){"
+        + "var v=pad?pad.querySelector('#__wtaTvPadVal'):null;"
+        + "if(v&&target)v.textContent=(target.value||'').slice(-16);"
+        + "};"
+        + "var key=function(txt,act){"
+        + "var b=document.createElement('button');b.type='button';b.textContent=txt;"
+        + "b.style.cssText='min-width:64px;height:54px;margin:3px;font:20px sans-serif;border-radius:8px;border:1px solid #666;background:#222;color:#fff';"
+        + "b.onclick=function(){try{act();}catch(e){}refresh();};"
+        + "return b;"
+        + "};"
+        + "var open=function(el){"
+        + "close();target=el;"
+        + "pad=document.createElement('div');pad.id='__wtaTvPad';"
+        + "pad.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483647;background:rgba(0,0,0,.92);padding:10px 12px;border-radius:12px;border:1px solid #555';"
+        + "var h=document.createElement('div');h.id='__wtaTvPadVal';"
+        + "h.style.cssText='color:#ffb300;font:18px sans-serif;text-align:center;margin-bottom:6px;min-height:20px';"
+        + "pad.appendChild(h);"
+        + "var g=document.createElement('div');g.style.cssText='display:grid;grid-template-columns:repeat(5,auto)';"
+        + "var digits='1234567890';"
+        + "for(var i=0;i<digits.length;i++){(function(d){"
+        + "g.appendChild(key(d,function(){target&&setVal(target,(target.value||'')+d);}));"
+        + "})(digits.charAt(i));}"
+        + "g.appendChild(key('删除',function(){target&&setVal(target,(target.value||'').slice(0,-1));}));"
+        + "g.appendChild(key('清空',function(){target&&setVal(target,'');}));"
+        + "g.appendChild(key('完成',function(){close();}));"
+        + "pad.appendChild(g);"
+        + "(document.body||document.documentElement).appendChild(pad);"
+        + "window.__wtaTvPadEl=pad;"
+        + "var first=pad.querySelector('button');if(first)first.focus();"
+        + "refresh();"
+        + "};"
+        + "window.__wtaTvOpenPad=function(el){if(!canPad(el))return false;open(el);return true;};"
+        + "window.__wtaTvClosePad=function(){if(!pad)return false;close();return true;};"
+        + "window.__wtaTvPadCandidates=function(){"
+        + "var out=[];if(!pad)return out;"
+        + "var bs=pad.querySelectorAll('button');"
+        + "for(var i=0;i<bs.length;i++){out.push({el:bs[i],r:bs[i].getBoundingClientRect()});}"
+        + "return out;"
         + "};"
         + "})();";
 
@@ -731,6 +818,10 @@ public class M extends Activity {
                 if (config != null && config.tvMode) {
                     // BACK handling is independent of the remote/toggle options.
                     view.evaluateJavascript(TV_BACK_JS, null);
+                }
+                if (config != null && config.tvMode) {
+                    // On-screen keypad: keyboard-free entry for phone / code fields.
+                    view.evaluateJavascript(TV_INPUT_JS, null);
                 }
                 if (config != null && config.tvMode && homeUrl == null
                         && url != null
@@ -1989,7 +2080,7 @@ class ApkBuilder:
     # silently serve a stale cached template — the old hand-bumped constant
     # relied on developers remembering to change it (AGENTS.md even documented
     # a manual cache-delete workaround for exactly that failure mode).
-    TEMPLATE_REVISION = "2026-11-27-tv-escape-3"
+    TEMPLATE_REVISION = "2026-11-27-tv-escape-4"
 
     @classmethod
     def _template_revision(cls) -> str:
