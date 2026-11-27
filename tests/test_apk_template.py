@@ -403,10 +403,16 @@ def test_tv_home_back_asks_before_exiting():
     assert "private FrameLayout exitOverlay;" in ACTIVITY_JAVA
     assert "private void hideExitConfirm()" in ACTIVITY_JAVA
     assert "if (exitOverlay != null)" in ACTIVITY_JAVA
-    # While the overlay is up, BACK cancels and everything else reaches the
-    # focused button through normal view dispatch.
-    assert "hideExitConfirm();\n                return true;" in ACTIVITY_JAVA
-    assert "return super.dispatchKeyEvent(event);" in ACTIVITY_JAVA
+    # The prompt must be driven by dispatchKeyEvent, not by view focus: on TV
+    # boxes the focus never leaves the WebView, so focus-based buttons look
+    # right but cannot be reached by the remote.
+    assert "paintExitButtons()" in ACTIVITY_JAVA
+    assert "KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER" in ACTIVITY_JAVA
+    assert "code == KeyEvent.KEYCODE_BUTTON_A" in ACTIVITY_JAVA
+    assert "exitChoice = 1; paintExitButtons();" in ACTIVITY_JAVA
+    assert 'hint.setText("方向键切换，OK 确认")' in ACTIVITY_JAVA
+    assert "exitQuit.requestFocus()" not in ACTIVITY_JAVA
+    assert "hideExitConfirm();\n                    return true;" in ACTIVITY_JAVA
     # The page-side full-screen overlay path must defer to native, which is
     # what decides "close the page" vs "ask to exit".
     js = "".join(re.findall(

@@ -746,6 +746,9 @@ public class M extends Activity {
     private FrameLayout fullscreenContainer;
     private android.widget.Button fullscreenExitButton;
     private FrameLayout exitOverlay;
+    private android.widget.Button exitQuit;
+    private android.widget.Button exitCancel;
+    private int exitChoice;
     private View customView;
     private WebChromeClient.CustomViewCallback customViewCallback;
 
@@ -1724,19 +1727,42 @@ public class M extends Activity {
         // button receives DPAD/ENTER. Without this block the TV branches below
         // would eat the keys and the buttons would be unreachable.
         if (exitOverlay != null) {
-            if (event.getAction() == KeyEvent.ACTION_DOWN
-                    && event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
-                hideExitConfirm();
-                return true;
+            int action = event.getAction();
+            int code = event.getKeyCode();
+            if (action == KeyEvent.ACTION_DOWN) {
+                // Log what the remote actually sends: unsupported key codes are
+                // the usual reason a TV box "cannot reach" a button.
+                Log.d("WebToAppTV", "EXIT key=" + code + " choice=" + exitChoice);
             }
-            if (event.getAction() == KeyEvent.ACTION_DOWN
-                    && (event.getKeyCode() == KeyEvent.KEYCODE_MENU
-                        || event.getKeyCode() == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
-                        || event.getKeyCode() == KeyEvent.KEYCODE_MEDIA_PREVIOUS
-                        || event.getKeyCode() == KeyEvent.KEYCODE_MEDIA_NEXT)) {
-                return true;
+            if (action == KeyEvent.ACTION_DOWN) {
+                if (code == KeyEvent.KEYCODE_BACK) {
+                    hideExitConfirm();
+                    return true;
+                }
+                if (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_UP) {
+                    if (event.getRepeatCount() == 0) { exitChoice = 0; paintExitButtons(); }
+                    return true;
+                }
+                if (code == KeyEvent.KEYCODE_DPAD_RIGHT || code == KeyEvent.KEYCODE_DPAD_DOWN) {
+                    if (event.getRepeatCount() == 0) { exitChoice = 1; paintExitButtons(); }
+                    return true;
+                }
+                if (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER
+                        || code == KeyEvent.KEYCODE_NUMPAD_ENTER || code == KeyEvent.KEYCODE_BUTTON_A
+                        || code == KeyEvent.KEYCODE_SPACE) {
+                    if (event.getRepeatCount() == 0) {
+                        boolean quit = exitChoice == 0;
+                        hideExitConfirm();
+                        if (quit) exitApp();
+                    }
+                    return true;
+                }
             }
-            return super.dispatchKeyEvent(event);
+            // Volume must keep working; everything else belongs to the prompt.
+            if (code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN) {
+                return super.dispatchKeyEvent(event);
+            }
+            return true;
         }
         // In native WebView fullscreen the WebView is detached, so page JS can
         // no longer see these keys. Route them to the native player instead.
@@ -2080,6 +2106,7 @@ public class M extends Activity {
             rlp.topMargin = dp(18);
             panel.addView(row, rlp);
 
+            exitChoice = 0;
             android.widget.Button quit = new android.widget.Button(this);
             quit.setText("退出");
             quit.setId(View.generateViewId());
@@ -2106,6 +2133,20 @@ public class M extends Activity {
             row.addView(cancel, new LinearLayout.LayoutParams(
                 dp(120), LinearLayout.LayoutParams.WRAP_CONTENT));
 
+            TextView hint = new TextView(this);
+            hint.setText("方向键切换，OK 确认");
+            hint.setTextColor(0xFF999999);
+            hint.setTextSize(13);
+            hint.setGravity(Gravity.END);
+            LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            hlp.topMargin = dp(6);
+            panel.addView(hint, hlp);
+
+            exitQuit = quit;
+            exitCancel = cancel;
+            paintExitButtons();
+
             FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(
                 dp(420), LinearLayout.LayoutParams.WRAP_CONTENT);
             plp.gravity = Gravity.CENTER;
@@ -2117,15 +2158,31 @@ public class M extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             exitOverlay = overlay;
 
+            // Keys are handled in dispatchKeyEvent, not by view focus: on some
+            // TV boxes the focus never leaves the WebView, so a focus-based
+            // dialog looks right but not one button can be reached.
             if (webView != null) webView.clearFocus();
-            quit.requestFocus();
-            overlay.post(new Runnable() {
-                @Override public void run() { if (exitOverlay != null) quit.requestFocus(); }
-            });
         } catch (Throwable e) {
             Log.w("WebToAppTV", "exit confirm failed", e);
             exitApp();
         }
+    }
+
+    /** Highlight the selected button. Owned by us, not by the focus system. */
+    private void paintExitButtons() {
+        styleExitButton(exitQuit, exitChoice == 0);
+        styleExitButton(exitCancel, exitChoice == 1);
+    }
+
+    private void styleExitButton(android.widget.Button button, boolean selected) {
+        if (button == null) return;
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(dp(10));
+        bg.setColor(selected ? 0xFFFF7300 : 0xFF2C2C30);
+        bg.setStroke(dp(2), selected ? 0xFFFFA04D : 0xFF4A4A4E);
+        button.setBackground(bg);
+        button.setTextColor(selected ? 0xFFFFFFFF : 0xFFBBBBBB);
+        button.setTextSize(17);
     }
 
     /** Drop the confirm overlay and hand the remote back to the page. */
@@ -2133,6 +2190,9 @@ public class M extends Activity {
         if (exitOverlay == null) return;
         FrameLayout overlay = exitOverlay;
         exitOverlay = null;
+        exitQuit = null;
+        exitCancel = null;
+        exitChoice = 0;
         try {
             ViewGroup root = (ViewGroup) findViewById(android.R.id.content);
             if (root != null) root.removeView(overlay);
@@ -2222,7 +2282,7 @@ class ApkBuilder:
     # silently serve a stale cached template — the old hand-bumped constant
     # relied on developers remembering to change it (AGENTS.md even documented
     # a manual cache-delete workaround for exactly that failure mode).
-    TEMPLATE_REVISION = "2026-11-27-tv-exit-confirm-5"
+    TEMPLATE_REVISION = "2026-11-27-tv-exit-confirm-6"
 
     @classmethod
     def _template_revision(cls) -> str:
