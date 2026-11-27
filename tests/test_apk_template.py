@@ -5,6 +5,7 @@ build host, far away from CI — so these tests assert the load-bearing pieces
 of the source stay intact rather than executing anything.
 """
 
+import json
 import re
 import struct
 
@@ -204,3 +205,69 @@ def test_axml_patcher_rejects_utf8_pool():
     struct.pack_into("<I", utf8_flagged, 24, struct.unpack_from("<I", utf8_flagged, 24)[0] | 0x100)
     with pytest.raises(ValueError):
         _AxmlPatcher(bytes(utf8_flagged)).patch({"com.webtoapp.template": "com.webtoapp.ae877d6c2"}, version_code=2)
+
+
+# ===== TV profile (P0) =====
+#
+# The TV work lives in the shared template, so an API 21 device must be able
+# to load its config, and a TV launcher must actually see the app. These are
+# source-level guards because CI has no Android SDK to compile with.
+
+
+def test_config_loading_is_api21_safe():
+    assert "input.readAllBytes()" not in ACTIVITY_JAVA
+    assert "import java.io.ByteArrayOutputStream;" in ACTIVITY_JAVA
+    assert "ByteArrayOutputStream buffer = new ByteArrayOutputStream();" in ACTIVITY_JAVA
+    assert "while ((count = input.read(chunk)) != -1)" in ACTIVITY_JAVA
+
+
+def test_manifest_supports_tv_launchers():
+    assert "android.intent.category.LEANBACK_LAUNCHER" in MANIFEST_XML
+    assert 'android:name="android.software.leanback" android:required="false"' in MANIFEST_XML
+    assert 'android:name="android.hardware.touchscreen" android:required="false"' in MANIFEST_XML
+    assert 'android:configChanges="orientation|screenSize' in MANIFEST_XML
+
+
+def test_html5_video_fullscreen_is_wired():
+    assert "@Override public void onShowCustomView(View view, CustomViewCallback callback)" in ACTIVITY_JAVA
+    assert "@Override public void onHideCustomView()" in ACTIVITY_JAVA
+    assert "setContentView(fullscreenContainer)" in ACTIVITY_JAVA
+    assert "setContentView(webView)" in ACTIVITY_JAVA
+    assert "webView.getWebChromeClient().onHideCustomView()" in ACTIVITY_JAVA
+
+
+def test_tv_auto_fullscreen_js_uses_standard_fullscreen_apis():
+    block = ACTIVITY_JAVA.split(
+        "private static final String TV_AUTO_FULLSCREEN_JS =", 1)[1].split(
+        "private WebView webView;", 1)[0]
+    js = "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', block))
+    assert '"' not in js
+    assert "requestFullscreen" in js and "webkitRequestFullscreen" in js
+    assert "getElementsByTagName('video')" in js
+    assert "onPageFinished(WebView view, String url)" in ACTIVITY_JAVA
+    assert "view.evaluateJavascript(TV_AUTO_FULLSCREEN_JS, null)" in ACTIVITY_JAVA
+
+
+def test_tv_navigation_guard_is_enforced():
+    assert "return tvMode && !isAllowedNavigationHost(trimmed);" in ACTIVITY_JAVA
+    assert "private boolean isAllowedNavigationHost(String url)" in ACTIVITY_JAVA
+    assert "isSameHostOrSubdomain(host, config.startHost)" in ACTIVITY_JAVA
+    assert "if (tvMode) return true;" in ACTIVITY_JAVA
+    # Server redirects never reach shouldOverrideUrlLoading.
+    assert "!isAllowedNavigationHost(url)" in ACTIVITY_JAVA
+
+
+def test_tv_options_reach_apk_config():
+    builder = ApkBuilder()
+    cfg = json.loads(builder._config_json("https://example.com", {
+        "feature-tv-mode": True,
+        "feature-tv-auto-fullscreen": True,
+        "feature-tv-extra-hosts": ["cdn.example.net"],
+    }))
+    assert cfg["tv_mode"] is True
+    assert cfg["tv_auto_fullscreen"] is True
+    assert cfg["tv_nav_hosts"] == ["cdn.example.net"]
+    default = json.loads(builder._config_json("https://example.com", {}))
+    assert default["tv_mode"] is False
+    assert default["tv_auto_fullscreen"] is False
+    assert default["tv_nav_hosts"] == []

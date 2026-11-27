@@ -221,7 +221,9 @@ import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Base64;
 import android.util.Log;
+import android.graphics.Color;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.webkit.CookieManager;
@@ -237,8 +239,10 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.FrameLayout;
 import android.widget.Toast;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -259,6 +263,34 @@ public class M extends Activity {
     private static final String DESKTOP_USER_AGENT =
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
         + "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+    // TV mode: watch for a <video> that actually starts playing, then ask the
+    // WebView to enter HTML5 fullscreen. The snippet has no double quotes so
+    // neither the Java string nor the Python template needs extra escaping.
+    private static final String TV_AUTO_FULLSCREEN_JS =
+        "(function(){"
+        + "if(window.__wtaTvFsInstalled)return;"
+        + "window.__wtaTvFsInstalled=true;"
+        + "var tries=0;"
+        + "var go=function(v){"
+        + "v.__wtaTvFsTried=true;"
+        + "try{if(v.requestFullscreen){v.requestFullscreen();return true;}}catch(e){}"
+        + "try{if(v.webkitRequestFullscreen){v.webkitRequestFullscreen();return true;}}catch(e){}"
+        + "return false;"
+        + "};"
+        + "var tick=function(){"
+        + "tries++;"
+        + "if(document.fullscreenElement||document.webkitFullscreenElement)return;"
+        + "var list=document.getElementsByTagName('video');"
+        + "for(var i=0;i<list.length;i++){"
+        + "var v=list[i];"
+        + "if(v.__wtaTvFsTried||v.paused||v.ended||!v.readyState)continue;"
+        + "if(go(v))return;"
+        + "}"
+        + "if(tries<120)setTimeout(tick,500);"
+        + "};"
+        + "tick();"
+        + "})();";
 
     // Core ad/tracker network blocklist. Stored as a HashSet for O(1) lookups.
     // Subdomain matching is handled in isAdHost() — adding "doubleclick.net"
@@ -305,6 +337,9 @@ public class M extends Activity {
     private String pendingGeolocationOrigin;
     private PermissionRequest pendingPermissionRequest;
     private ValueCallback<Uri[]> pendingFileChoiceCallback;
+    private FrameLayout fullscreenContainer;
+    private View customView;
+    private WebChromeClient.CustomViewCallback customViewCallback;
 
     /**
      * Returns true if the given host matches any blocked ad/tracker domain.
@@ -348,6 +383,23 @@ public class M extends Activity {
             }
             @Override public boolean shouldOverrideUrlLoading(WebView view, String url) {
                 return handleNavigation(url);
+            }
+            @Override public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                // shouldOverrideUrlLoading is not called for server-side
+                // redirects, so re-check the landed host in TV mode.
+                if (config != null && config.tvMode
+                        && url != null
+                        && (url.startsWith("http://") || url.startsWith("https://"))
+                        && !isAllowedNavigationHost(url)) {
+                    toastOnUi("已拦截站外跳转");
+                    if (view.canGoBack()) view.goBack();
+                    else if (config.url != null) view.loadUrl(config.url);
+                    return;
+                }
+                if (config != null && config.tvMode && config.tvAutoFullscreen) {
+                    view.evaluateJavascript(TV_AUTO_FULLSCREEN_JS, null);
+                }
             }
             // ── Ad blocker (modern API 21+) ───────────────────────────────
             // Intercepts every sub-resource request. Ad network hosts get an
@@ -492,8 +544,16 @@ public class M extends Activity {
         AppConfig loaded = new AppConfig();
         try {
             InputStream input = getAssets().open("webtoapp_config.json");
-            byte[] data = input.readAllBytes();
+            // readAllBytes() only exists on API 33+; using it here made every
+            // config load fail on API 21-32 and left the app on about:blank.
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            byte[] chunk = new byte[4096];
+            int count;
+            while ((count = input.read(chunk)) != -1) {
+                buffer.write(chunk, 0, count);
+            }
             input.close();
+            byte[] data = buffer.toByteArray();
             JSONObject json = new JSONObject(new String(data, StandardCharsets.UTF_8));
             loaded.url = json.optString("url", "about:blank").trim();
             loaded.immersiveFullscreen = json.optBoolean("immersive_fullscreen", false);
@@ -505,6 +565,18 @@ public class M extends Activity {
                     String h = extraHosts.optString(i, "").trim().toLowerCase(Locale.US);
                     if (!h.isEmpty()) loaded.extraAdHosts.add(h);
                 }
+            }
+            loaded.tvMode = json.optBoolean("tv_mode", false);
+            loaded.tvAutoFullscreen = json.optBoolean("tv_auto_fullscreen", false);
+            JSONArray tvHosts = json.optJSONArray("tv_nav_hosts");
+            if (tvHosts != null) {
+                for (int i = 0; i < tvHosts.length(); i++) {
+                    String h = tvHosts.optString(i, "").trim().toLowerCase(Locale.US);
+                    if (!h.isEmpty()) loaded.tvNavHosts.add(h);
+                }
+            }
+            if (loaded.url != null && !loaded.url.isEmpty()) {
+                try { loaded.startHost = Uri.parse(loaded.url).getHost(); } catch (Throwable ignored) {}
             }
         } catch (Throwable ignored) {}
         return loaded;
@@ -572,9 +644,13 @@ public class M extends Activity {
         String trimmed = url.trim();
         if (trimmed.isEmpty()) return false;
         String lower = trimmed.toLowerCase(Locale.US);
+        boolean tvMode = config != null && config.tvMode;
+        if (lower.startsWith("http://") || lower.startsWith("https://")) {
+            // false = let the WebView load it; true = block it. TV mode only
+            // allows the launch host plus explicitly configured extra hosts.
+            return tvMode && !isAllowedNavigationHost(trimmed);
+        }
         if (
-            lower.startsWith("http://") ||
-            lower.startsWith("https://") ||
             lower.startsWith("about:") ||
             lower.startsWith("javascript:") ||
             lower.startsWith("data:") ||
@@ -582,10 +658,33 @@ public class M extends Activity {
         ) {
             return false;
         }
+        if (tvMode) return true;
         if (lower.startsWith("intent://")) {
             return openIntentUri(trimmed);
         }
         return openExternal(trimmed);
+    }
+
+    private static boolean isSameHostOrSubdomain(String host, String base) {
+        if (host == null || base == null) return false;
+        String h = host.toLowerCase(Locale.US);
+        String b = base.toLowerCase(Locale.US);
+        return h.equals(b) || h.endsWith("." + b);
+    }
+
+    private boolean isAllowedNavigationHost(String url) {
+        if (url == null || config == null) return false;
+        try {
+            String host = Uri.parse(url).getHost();
+            if (host == null || host.isEmpty()) return false;
+            if (isSameHostOrSubdomain(host, config.startHost)) return true;
+            for (String allowed : config.tvNavHosts) {
+                if (isSameHostOrSubdomain(host, allowed)) return true;
+            }
+            return false;
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     private boolean openIntentUri(String url) {
@@ -638,6 +737,46 @@ public class M extends Activity {
                 pendingPermissionRequest = null;
             }
         }
+
+        // ── HTML5 video fullscreen (TV mode) ──────────────────────────────
+        // Without these callbacks requestFullscreen() is a no-op in WebView:
+        // the video stays inline. Swap in a black fullscreen container and
+        // restore the WebView when the player leaves fullscreen.
+        @Override public void onShowCustomView(View view, CustomViewCallback callback) {
+            if (customView != null) {
+                callback.onCustomViewHidden();
+                return;
+            }
+            if (fullscreenContainer == null) {
+                fullscreenContainer = new FrameLayout(M.this);
+                fullscreenContainer.setBackgroundColor(Color.BLACK);
+            }
+            customView = view;
+            customViewCallback = callback;
+            if (view.getParent() != null) {
+                ((ViewGroup) view.getParent()).removeView(view);
+            }
+            fullscreenContainer.addView(view, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+            setContentView(fullscreenContainer);
+        }
+
+        @Override public void onHideCustomView() {
+            if (customView == null) return;
+            if (customViewCallback != null) {
+                try { customViewCallback.onCustomViewHidden(); } catch (Throwable ignored) {}
+            }
+            if (fullscreenContainer != null) {
+                fullscreenContainer.removeView(customView);
+                fullscreenContainer.setVisibility(View.GONE);
+            }
+            customView = null;
+            customViewCallback = null;
+            setContentView(webView);
+            applyImmersiveMode();
+        }
+        // ─────────────────────────────────────────────────────────────────
 
         // ── Popup blocker ─────────────────────────────────────────────────
         // Ad networks call window.open() without any user interaction to spawn
@@ -1069,6 +1208,10 @@ public class M extends Activity {
     }
 
     @Override public void onBackPressed() {
+        if (customView != null && webView != null) {
+            webView.getWebChromeClient().onHideCustomView();
+            return;
+        }
         if (webView != null && webView.canGoBack()) webView.goBack();
         else super.onBackPressed();
     }
@@ -1101,6 +1244,12 @@ public class M extends Activity {
         // Extra ad hosts injected at build time via webtoapp_config.json.
         // Allows blocking site-specific ad domains without rebuilding the APK template.
         Set<String> extraAdHosts = new HashSet<>();
+        // TV profile: keep playback/navigation inside the app and restrict
+        // http(s) navigation to the launch host plus tvNavHosts.
+        boolean tvMode = false;
+        boolean tvAutoFullscreen = false;
+        Set<String> tvNavHosts = new HashSet<>();
+        String startHost = null;
     }
 }
 """
@@ -1109,6 +1258,8 @@ MANIFEST_XML = """<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="{pkg}" android:versionCode="{version_code}" android:versionName="{version_name}">
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="36"/>
+    <uses-feature android:name="android.software.leanback" android:required="false"/>
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
@@ -1119,10 +1270,15 @@ MANIFEST_XML = """<?xml version="1.0" encoding="utf-8"?>
     <application android:label="{name}" android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">
         <activity android:name="w.M" android:exported="true"
-            android:theme="@android:style/Theme.NoTitleBar">
+            android:theme="@android:style/Theme.NoTitleBar"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode|navigation">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
             </intent-filter>
         </activity>
     </application>
@@ -1140,7 +1296,7 @@ class ApkBuilder:
     # silently serve a stale cached template — the old hand-bumped constant
     # relied on developers remembering to change it (AGENTS.md even documented
     # a manual cache-delete workaround for exactly that failure mode).
-    TEMPLATE_REVISION = "2026-09-03-exportbridge-1"
+    TEMPLATE_REVISION = "2026-11-27-tv-p0-1"
 
     @classmethod
     def _template_revision(cls) -> str:
@@ -1812,6 +1968,15 @@ class ApkBuilder:
             # AppConfig so site-specific domains can be blocked without a
             # template rebuild.
             "extra_ad_hosts": list(raw.get("extra_ad_hosts") or []),
+            "tv_mode": bool(
+                raw.get("feature-tv-mode") or raw.get("feature_tv_mode")
+            ),
+            "tv_auto_fullscreen": bool(
+                raw.get("feature-tv-auto-fullscreen") or raw.get("feature_tv_auto_fullscreen")
+            ),
+            "tv_nav_hosts": list(
+                raw.get("feature-tv-extra-hosts") or raw.get("feature_tv_extra_hosts") or []
+            ),
         }
         return json.dumps(payload, ensure_ascii=False, indent=2)
 

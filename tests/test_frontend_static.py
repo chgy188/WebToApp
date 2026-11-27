@@ -23,6 +23,12 @@ NEW_KEYS = (
     "market.loadFailed",
     "market.retry",
     "profile.saveFailed",
+    "config.tvModeTitle",
+    "config.tvModeDesc",
+    "config.tvAutoFullscreenTitle",
+    "config.tvAutoFullscreenDesc",
+    "config.tvHostsTitle",
+    "config.tvHostsNote",
 )
 
 
@@ -77,6 +83,20 @@ class FrontendFeedbackTests(unittest.TestCase):
         css = _read("css/style.css")
         self.assertIn(".status-badge.warn", css)
         self.assertIn(".analysis-item .value.warn", css)
+
+
+class TvOptionFormTests(unittest.TestCase):
+    def test_tv_controls_are_wired_into_form_and_collection(self):
+        html = _read("index.html")
+        app = _read("js/app.v5.js")
+        for field_id in (
+            "feature-tv-mode",
+            "feature-tv-auto-fullscreen",
+            "feature-tv-extra-hosts",
+        ):
+            self.assertIn(f'id="{field_id}"', html)
+            self.assertIn(f"getElementById('{field_id}')", app)
+            self.assertIn(f"'{field_id}'", app)
 
 
 class AnnouncementTests(unittest.TestCase):
@@ -711,7 +731,7 @@ class StreamingFirstLoadTests(unittest.TestCase):
 
     def test_streaming_assets_are_cache_busted(self):
         self.assertIn("css/style.css?v=20261118-board1", self.html)
-        self.assertIn("js/app.v5.js?v=20261125-project-path", self.html)
+        self.assertIn("js/app.v5.js?v=20261127-tv-p0", self.html)
 
     def test_feedback_board_is_wired(self):
         # #248: nav entry + modal + the board module in app.v5.js.

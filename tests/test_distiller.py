@@ -775,3 +775,29 @@ class DistillerAboutContentTests(unittest.TestCase):
                     distiller.write_app_files(app_dir, recipe2, base_url="https://service.test")
         self.assertFalse((app_dir / "about-1.webp").exists())
         self.assertEqual(recipe2["about"]["images"], [])
+
+
+class DistillerTvOptionTests(unittest.TestCase):
+    def test_tv_options_survive_feature_whitelist(self):
+        options = Distiller()._feature_options({
+            "feature-tv-mode": True,
+            "feature-tv-auto-fullscreen": True,
+            "feature-tv-extra-hosts": ["video.example.com"],
+        })
+        self.assertTrue(options["feature-tv-mode"])
+        self.assertTrue(options["feature-tv-auto-fullscreen"])
+        self.assertEqual(options["feature-tv-extra-hosts"], ["video.example.com"])
+
+    def test_tv_extra_hosts_are_normalized(self):
+        hosts = Distiller()._feature_options({
+            "feature-tv-extra-hosts": (
+                "https://CDN.Example.com/path, video.example.com:8443; bad_host, *.evil.com"
+            )
+        })["feature-tv-extra-hosts"]
+        self.assertEqual(hosts, ["cdn.example.com", "video.example.com"])
+
+    def test_tv_defaults_are_disabled(self):
+        options = Distiller()._feature_options({})
+        self.assertFalse(options["feature-tv-mode"])
+        self.assertFalse(options["feature-tv-auto-fullscreen"])
+        self.assertEqual(options["feature-tv-extra-hosts"], [])
