@@ -132,6 +132,40 @@ def test_download_failures_are_visible():
     assert "import android.util.Log;" in ACTIVITY_JAVA
 
 
+# ===== Friendly load-error screen =====
+#
+# WebView's built-in error page is bare, offers no exit, and left TV users
+# stuck when a proxy/DNS hiccup hit the first load. The template now draws
+# its own error view with retry + exit actions.
+
+
+def test_custom_error_screen_offers_retry_and_exit():
+    assert "private View errorView;" in ACTIVITY_JAVA
+    assert "private boolean errorVisible;" in ACTIVITY_JAVA
+    assert "private View buildErrorView()" in ACTIVITY_JAVA
+    assert 'retry.setText("重新加载")' in ACTIVITY_JAVA
+    assert 'exit.setText("退出应用")' in ACTIVITY_JAVA
+    assert "webView.reload()" in ACTIVITY_JAVA
+    assert "@Override public void onClick(View v) { finish(); }" in ACTIVITY_JAVA
+    assert "import android.widget.Button;" in ACTIVITY_JAVA
+    assert "import android.widget.FrameLayout;" in ACTIVITY_JAVA
+    assert "import android.widget.LinearLayout;" in ACTIVITY_JAVA
+    assert "import android.widget.TextView;" in ACTIVITY_JAVA
+
+
+def test_load_errors_replace_whole_screen_only_for_main_frame():
+    assert "import android.webkit.WebResourceError;" in ACTIVITY_JAVA
+    assert "onReceivedError(WebView view, WebResourceRequest request, WebResourceError error)" in ACTIVITY_JAVA
+    assert "request.isForMainFrame()" in ACTIVITY_JAVA
+    assert "response.getStatusCode() >= 400" in ACTIVITY_JAVA
+    assert "onPageFinished(WebView view, String url)" in ACTIVITY_JAVA
+    assert "hideError()" in ACTIVITY_JAVA
+
+
+def test_back_key_exits_from_error_screen():
+    assert "if (errorVisible) { finish(); return; }" in ACTIVITY_JAVA
+
+
 def test_notification_permission_nudged_not_blocking():
     assert '<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>' in MANIFEST_XML
     assert "REQ_NOTIFY" in ACTIVITY_JAVA
