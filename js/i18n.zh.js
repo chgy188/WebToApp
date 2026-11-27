@@ -133,6 +133,8 @@ R('zh', {
     'config.tvAutoFullscreenDesc': '检测到视频开始播放时自动切换到全屏播放器。',
     'config.tvRemoteTitle': '遥控器操控',
     'config.tvRemoteDesc': '用方向键移动焦点、确定键选择，并用媒体键控制播放（播放/暂停、快退、快进）。',
+    'config.tvSubtitlesTitle': '字幕',
+    'config.tvSubtitlesDesc': '为站点原生或 HLS 字幕添加 CC 按钮和字幕键轨道选择，含关闭选项。',
     'config.tvHostsTitle': '额外允许的域名（TV 模式）',
     'config.tvHostsNote': '允许 TV 应用跳转的其他域名（逗号分隔），起始站点始终允许。',
     'config.immersiveDesc': '隐藏 Android 状态栏与导航栏，让内容铺满屏幕。iPhone 应用默认即以全屏独立窗口启动。',

@@ -109,6 +109,8 @@ R('fr', {
     'config.tvAutoFullscreenDesc': 'Lorsqu’une vidéo commence à être lue, bascule automatiquement en lecteur plein écran.',
     'config.tvRemoteTitle': 'Contrôle à la télécommande',
     'config.tvRemoteDesc': 'Naviguez avec les flèches, sélectionnez avec OK et contrôlez la lecture avec les touches multimédias (lecture/pause, recul, avance).',
+    'config.tvSubtitlesTitle': 'Sous-titres',
+    'config.tvSubtitlesDesc': 'Ajoute un bouton CC et un sélecteur de pistes via la touche sous-titres pour les sous-titres natifs ou HLS, avec une option de désactivation.',
     'config.tvHostsTitle': 'Domaines autorisés supplémentaires (mode TV)',
     'config.tvHostsNote': 'Domaines supplémentaires vers lesquels l’application TV peut naviguer (séparés par des virgules). Le site de départ est toujours autorisé.',
     'config.immersiveDesc': 'Masque la barre d\u2019état et la barre de navigation d\u2019Android pour que le contenu remplisse l\u2019écran. Les applications iPhone s\u2019ouvrent déjà en plein écran par défaut.',

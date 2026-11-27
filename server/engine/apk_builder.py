@@ -372,6 +372,74 @@ public class M extends Activity {
         + "};"
         + "})();";
 
+    // TV subtitles: expose a CC button and a captions-key panel built from
+    // the current video's textTracks (or hls.js subtitleTracks). Selection
+    // uses standard Web APIs only; no assumption about the site's own player
+    // chrome is required.
+    private static final String TV_SUBTITLES_JS =
+        "(function(){"
+        + "if(window.__wtaTvSubsInstalled)return;"
+        + "window.__wtaTvSubsInstalled=true;"
+        + "var panel=null,btn=null;"
+        + "var style=document.createElement('style');"
+        + "style.id='__wtaTvSubsStyle';"
+        + "style.textContent='#__wtaTvSubsBtn{position:fixed;right:24px;top:24px;z-index:2147483647;background:rgba(0,0,0,.72);color:#fff;border:2px solid #ffb300;border-radius:8px;padding:8px 14px;font:16px sans-serif}'"
+        + "+'#__wtaTvSubsPanel{position:fixed;right:24px;top:80px;z-index:2147483647;background:rgba(0,0,0,.86);color:#fff;padding:16px 18px;border-radius:10px;font:16px/1.4 sans-serif;min-width:230px}'"
+        + "+'#__wtaTvSubsPanel button{display:block;width:100%;margin:6px 0;background:transparent;color:#fff;border:1px solid #888;border-radius:6px;padding:8px 10px;text-align:left;font:16px sans-serif}'"
+        + "+'#__wtaTvSubsPanel button[aria-pressed=true]{background:#ffb300;color:#111}';"
+        + "if(document.head&&!document.getElementById('__wtaTvSubsStyle'))document.head.appendChild(style);"
+        + "var activeVideo=function(){"
+        + "var fs=document.fullscreenElement||document.webkitFullscreenElement;"
+        + "if(fs){var v=(fs.tagName==='VIDEO')?fs:fs.querySelector('video');if(v)return v;}"
+        + "var all=document.querySelectorAll('video');"
+        + "for(var i=0;i<all.length;i++){if(!all[i].paused&&!all[i].ended&&all[i].readyState)return all[i];}"
+        + "return all.length?all[0]:null;"
+        + "};"
+        + "var hlsOf=function(v){"
+        + "if(!v)return null;"
+        + "var h=v.hls||window.hls;"
+        + "return (h&&h.subtitleTracks)?h:null;"
+        + "};"
+        + "var buildItems=function(v){"
+        + "var out=[];"
+        + "var tt=v&&v.textTracks;"
+        + "if(tt&&tt.length){"
+        + "out.push({label:'关闭字幕',apply:function(){for(var i=0;i<tt.length;i++){try{tt[i].mode='disabled';}catch(e){}}}});"
+        + "for(var i=0;i<tt.length;i++){(function(idx){var t=tt[idx];out.push({label:(t.label||t.language||('轨道 '+(idx+1))),apply:function(){for(var j=0;j<tt.length;j++){try{tt[j].mode=(j===idx)?'showing':'disabled';}catch(e){}}}});})(i);}"
+        + "return out;"
+        + "}"
+        + "var h=hlsOf(v);"
+        + "if(h&&h.subtitleTracks.length){"
+        + "out.push({label:'关闭字幕',apply:function(){try{h.subtitleTrack=-1;h.subtitleDisplay=false;}catch(e){}}});"
+        + "for(var i=0;i<h.subtitleTracks.length;i++){(function(idx){var t=h.subtitleTracks[idx];out.push({label:(t.name||t.lang||('轨道 '+(idx+1))),apply:function(){try{h.subtitleDisplay=true;h.subtitleTrack=idx;}catch(e){}}});})(i);}"
+        + "}"
+        + "return out;"
+        + "};"
+        + "var render=function(){"
+        + "var old=document.getElementById('__wtaTvSubsPanel');"
+        + "if(old&&old.parentNode)old.parentNode.removeChild(old);"
+        + "panel=document.createElement('div');panel.id='__wtaTvSubsPanel';"
+        + "var head=document.createElement('div');head.textContent='字幕';head.style.marginBottom='8px';panel.appendChild(head);"
+        + "var items=buildItems(activeVideo());"
+        + "if(!items.length){var none=document.createElement('div');none.textContent='未检测到字幕轨道';panel.appendChild(none);}"
+        + "for(var i=0;i<items.length;i++){(function(idx){var b=document.createElement('button');b.type='button';b.textContent=items[idx].label;b.setAttribute('aria-pressed','false');b.onclick=function(){items[idx].apply();btn.textContent=(idx===0?'CC':'CC ON');var list=panel.querySelectorAll('button');for(var j=0;j<list.length;j++){list[j].setAttribute('aria-pressed',(j===idx)?'true':'false');}};panel.appendChild(b);})(i);}"
+        + "(document.body||document.documentElement).appendChild(panel);"
+        + "var first=panel.querySelector('button');if(first)first.focus();"
+        + "};"
+        + "window.__wtaTvSubtitles=function(){"
+        + "if(panel&&panel.parentNode){panel.parentNode.removeChild(panel);panel=null;return;}"
+        + "render();"
+        + "};"
+        + "var installButton=function(){"
+        + "if(document.getElementById('__wtaTvSubsBtn'))return;"
+        + "btn=document.createElement('button');btn.type='button';btn.id='__wtaTvSubsBtn';btn.textContent='CC';"
+        + "btn.onclick=function(){window.__wtaTvSubtitles();};"
+        + "(document.body||document.documentElement).appendChild(btn);"
+        + "};"
+        + "installButton();"
+        + "window.addEventListener('load',installButton,false);"
+        + "})();";
+
     // Core ad/tracker network blocklist. Stored as a HashSet for O(1) lookups.
     // Subdomain matching is handled in isAdHost() — adding "doubleclick.net"
     // automatically blocks "securepubads.g.doubleclick.net" etc.
@@ -485,6 +553,9 @@ public class M extends Activity {
                 }
                 if (config != null && config.tvMode && config.tvRemote) {
                     view.evaluateJavascript(TV_REMOTE_JS, null);
+                }
+                if (config != null && config.tvMode && config.tvSubtitles) {
+                    view.evaluateJavascript(TV_SUBTITLES_JS, null);
                 }
             }
             // ── Ad blocker (modern API 21+) ───────────────────────────────
@@ -655,6 +726,7 @@ public class M extends Activity {
             loaded.tvMode = json.optBoolean("tv_mode", false);
             loaded.tvAutoFullscreen = json.optBoolean("tv_auto_fullscreen", false);
             loaded.tvRemote = json.optBoolean("tv_remote", false);
+            loaded.tvSubtitles = json.optBoolean("tv_subtitles", false);
             JSONArray tvHosts = json.optJSONArray("tv_nav_hosts");
             if (tvHosts != null) {
                 for (int i = 0; i < tvHosts.length(); i++) {
@@ -1333,6 +1405,17 @@ public class M extends Activity {
                 }
             }
         }
+        // Captions key works even when DPAD navigation is turned off. It
+        // opens/closes the on-screen track picker injected above.
+        if (config != null && config.tvMode && config.tvSubtitles
+                && webView != null && keyCode == KeyEvent.KEYCODE_CAPTIONS) {
+            int action = event.getAction();
+            if (action == KeyEvent.ACTION_DOWN) {
+                webView.evaluateJavascript(
+                    "typeof __wtaTvSubtitles==='function'&&__wtaTvSubtitles()", null);
+            }
+            return true;
+        }
         return super.dispatchKeyEvent(event);
     }
 
@@ -1416,6 +1499,7 @@ public class M extends Activity {
         boolean tvMode = false;
         boolean tvAutoFullscreen = false;
         boolean tvRemote = false;
+        boolean tvSubtitles = false;
         Set<String> tvNavHosts = new HashSet<>();
         String startHost = null;
     }
@@ -1464,7 +1548,7 @@ class ApkBuilder:
     # silently serve a stale cached template — the old hand-bumped constant
     # relied on developers remembering to change it (AGENTS.md even documented
     # a manual cache-delete workaround for exactly that failure mode).
-    TEMPLATE_REVISION = "2026-11-27-tv-p1-1"
+    TEMPLATE_REVISION = "2026-11-27-tv-p2-1"
 
     @classmethod
     def _template_revision(cls) -> str:
@@ -2144,6 +2228,9 @@ class ApkBuilder:
             ),
             "tv_remote": bool(
                 raw.get("feature-tv-remote") or raw.get("feature_tv_remote")
+            ),
+            "tv_subtitles": bool(
+                raw.get("feature-tv-subtitles") or raw.get("feature_tv_subtitles")
             ),
             "tv_nav_hosts": list(
                 raw.get("feature-tv-extra-hosts") or raw.get("feature_tv_extra_hosts") or []

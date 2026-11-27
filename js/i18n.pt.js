@@ -109,6 +109,8 @@ R('pt', {
     'config.tvAutoFullscreenDesc': 'Quando um vídeo começa a reproduzir, alterna automaticamente para o player em tela cheia.',
     'config.tvRemoteTitle': 'Controle por remoto',
     'config.tvRemoteDesc': 'Navegue com as setas, selecione com OK e controle a reprodução com as teclas de mídia (reproduzir/pausar, retroceder, avançar).',
+    'config.tvSubtitlesTitle': 'Legendas',
+    'config.tvSubtitlesDesc': 'Adiciona um botão CC e um seletor de faixas pela tecla de legendas para legendas nativas ou HLS, incluindo a opção de desativar.',
     'config.tvHostsTitle': 'Domínios permitidos adicionais (modo TV)',
     'config.tvHostsNote': 'Domínios adicionais para os quais o app de TV pode navegar (separados por vírgula). O site inicial é sempre permitido.',
     'config.immersiveDesc': 'Oculta a barra de status e de navegação do Android para o conteúdo preencher a tela. Os apps de iPhone já abrem em tela cheia por padrão.',

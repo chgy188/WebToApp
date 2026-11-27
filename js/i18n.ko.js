@@ -129,6 +129,8 @@ R('ko', {
     'config.tvAutoFullscreenDesc': '동영상 재생이 시작되면 자동으로 전체 화면 플레이어로 전환합니다.',
     'config.tvRemoteTitle': '리모컨 조작',
     'config.tvRemoteDesc': '방향키로 초점을 이동하고 확인 키로 선택하며, 미디어 키로 재생을 제어합니다(재생/일시정지, 되감기, 빨리감기).',
+    'config.tvSubtitlesTitle': '자막',
+    'config.tvSubtitlesDesc': '사이트 기본 또는 HLS 자막에 CC 버튼과 자막 키 트랙 선택기를 추가합니다(끄기 포함).',
     'config.tvHostsTitle': '추가 허용 도메인 (TV 모드)',
     'config.tvHostsNote': 'TV 앱이 이동할 수 있는 추가 도메인(쉼표로 구분). 시작 사이트는 항상 허용됩니다.',
     'config.immersiveDesc': 'Android 상태 표시줄과 내비게이션 바를 숨겨 콘텐츠가 화면을 채우게 합니다. iPhone 앱은 기본적으로 전체 화면으로 실행됩니다.',

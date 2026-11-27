@@ -133,6 +133,8 @@ R('en', {
     'config.tvAutoFullscreenDesc': 'When a video starts playing, switch the player to fullscreen automatically.',
     'config.tvRemoteTitle': 'Remote control',
     'config.tvRemoteDesc': 'Navigate with DPAD, select with OK, and control playback with media keys (play/pause, rewind, fast forward).',
+    'config.tvSubtitlesTitle': 'Subtitles',
+    'config.tvSubtitlesDesc': 'Add a CC button and a captions-key track picker for native or HLS subtitles, including an off option.',
     'config.tvHostsTitle': 'Extra allowed hosts (TV mode)',
     'config.tvHostsNote': 'Additional domains the TV app may navigate to (comma separated). The launch site is always allowed.',
     'config.immersiveDesc': 'Hide the Android status and navigation bars so content fills the screen. iPhone apps already launch fullscreen by default.',

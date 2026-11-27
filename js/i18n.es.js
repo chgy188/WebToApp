@@ -109,6 +109,8 @@ R('es', {
     'config.tvAutoFullscreenDesc': 'Cuando empieza a reproducirse un vídeo, cambia automáticamente al reproductor a pantalla completa.',
     'config.tvRemoteTitle': 'Control por mando',
     'config.tvRemoteDesc': 'Navega con las flechas, selecciona con OK y controla la reproducción con las teclas multimedia (reproducir/pausar, rebobinar, avanzar).',
+    'config.tvSubtitlesTitle': 'Subtítulos',
+    'config.tvSubtitlesDesc': 'Añade un botón CC y un selector de pistas con la tecla de subtítulos para los subtítulos nativos o HLS, incluida la opción de desactivar.',
     'config.tvHostsTitle': 'Dominios permitidos adicionales (modo TV)',
     'config.tvHostsNote': 'Dominios adicionales a los que la app de TV puede navegar (separados por comas). El sitio inicial siempre está permitido.',
     'config.immersiveDesc': 'Oculta la barra de estado y de navegación de Android para que el contenido llene la pantalla. Las apps de iPhone ya se abren en pantalla completa de forma predeterminada.',

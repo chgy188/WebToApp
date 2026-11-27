@@ -483,6 +483,9 @@ class Distiller:
             "feature-tv-remote": bool(
                 raw.get("feature-tv-remote") or raw.get("feature_tv_remote")
             ),
+            "feature-tv-subtitles": bool(
+                raw.get("feature-tv-subtitles") or raw.get("feature_tv_subtitles")
+            ),
             "feature-tv-extra-hosts": self._nav_host_list(raw),
         }
         # Desktop browser-app shells (Windows .bat, Linux .desktop) honor
