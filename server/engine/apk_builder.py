@@ -289,12 +289,19 @@ public class M extends Activity {
         + "if(v.requestFullscreen){var p=v.requestFullscreen();if(p&&p.catch)p.catch(function(e){});}"
         + "else if(v.webkitRequestFullscreen){v.webkitRequestFullscreen();}"
         + "};"
+        + "btn.style.display='none';"
         + "(document.body||document.documentElement).appendChild(btn);"
-        + "btn.focus();"
+        + "var fsShown=false;"
+        + "var fsTimer=setInterval(function(){"
+        + "var v=document.querySelector('video');"
+        + "btn.style.display=v?'block':'none';"
+        + "if(!v){fsShown=false;return;}"
+        + "if(!fsShown){fsShown=true;btn.focus();}"
         + "try{if(window.WebToApp){var r=btn.getBoundingClientRect();"
         + "window.WebToApp.setFullscreenButtonRect("
         + "Math.round((r.left+r.width/2)*(window.devicePixelRatio||1)),"
         + "Math.round((r.top+r.height/2)*(window.devicePixelRatio||1)));}}catch(e){}"
+        + "},300);"
         + "})();";
 
     // TV remote: give non-TV pages a visible focus cursor, geometric DPAD
@@ -309,7 +316,7 @@ public class M extends Activity {
         + "s.textContent=':focus{outline:3px solid #ffb300!important;outline-offset:2px!important}';"
         + "if(document.head&&!document.getElementById('__wtaTvFocusStyle'))document.head.appendChild(s);"
         + "var candidates=function(){"
-        + "var nodes=document.querySelectorAll('a,button,input,select,textarea,video,[tabindex],[role=button],[role=link]');"
+        + "var nodes=document.querySelectorAll('a,button,input,select,textarea,video,[tabindex],[role=button],[role=link],div,span,li');"
         + "var out=[];"
         + "for(var i=0;i<nodes.length;i++){"
         + "var el=nodes[i];"
@@ -318,37 +325,71 @@ public class M extends Activity {
         + "if(r.width<4||r.height<4)continue;"
         + "var st=window.getComputedStyle(el);"
         + "if(st.visibility==='hidden'||st.display==='none'||st.opacity==='0')continue;"
+        + "var base=el.matches('a,button,input,select,textarea,video,[tabindex],[role=button],[role=link]');"
+        + "var pointer=st.cursor==='pointer'&&r.width<=320&&r.height<=320;"
+        + "if(!base&&!pointer&&!el.onclick)continue;"
+        + "var dup=false;for(var k=0;k<out.length;k++){if(out[k].el===el){dup=true;break;}}"
+        + "if(dup)continue;"
         + "out.push({el:el,r:r});"
         + "}"
         + "return out;"
         + "};"
-        + "var focusEl=function(el){"
-        + "el.focus();"
-        + "try{el.scrollIntoView({block:'center',inline:'center'});}catch(e){}"
+        + "var reportFocus=function(el){"
+        + "try{if(window.WebToApp)window.WebToApp.setFocusIsFsBtn(!!(el&&el.id==='__wtaTvFsBtn'));}catch(e){}"
         + "};"
-        + "var first=candidates();"
-        + "if(first.length)focusEl(first[0].el);"
+        + "var focusEl=function(el,noScroll){"
+        + "try{if(el.tabIndex<0)el.setAttribute('tabindex','-1');}catch(e){}"
+        + "el.focus();"
+        + "reportFocus(el);"
+        + "if(!noScroll){try{el.scrollIntoView({block:'center',inline:'center'});}catch(e){}}"
+        + "};"
+        + "try{document.addEventListener('focusin',function(e){reportFocus(e.target);},true);}catch(e){}"
+        + "var topLeft=function(){"
+        + "var l=candidates();if(!l.length)return null;"
+        + "var fs=document.getElementById('__wtaTvFsBtn');"
+        + "if(fs&&fs.style.display!=='none'&&document.querySelector('video'))return fs;"
+        + "var best=0,score=Infinity;"
+        + "for(var i=0;i<l.length;i++){"
+        + "var r=l[i].r,s=r.top*2+r.left;"
+        + "if(s<score){score=s;best=i;}"
+        + "}"
+        + "return l[best].el;"
+        + "};"
+        + "var resetFocus=function(){var el=topLeft();if(el)focusEl(el,true);};"
+        + "var initial=document.activeElement;"
+        + "if(initial&&initial.id==='__wtaTvFsBtn'&&initial.style.display!=='none'){reportFocus(initial);}"
+        + "else{resetFocus();}"
+        + "var hrefKey=function(){return location.pathname+location.search;};"
+        + "var lastKey=hrefKey();"
+        + "var checkHref=function(){var k=hrefKey();if(k!==lastKey){lastKey=k;resetFocus();}};"
+        + "try{window.addEventListener('popstate',checkHref,false);}catch(e){}"
+        + "var hrefTimer=setInterval(checkHref,400);"
         + "window.__wtaTvMoveFocus=function(dx,dy){"
-        + "var list=candidates();"
-        + "if(!list.length)return;"
-        + "var cur=document.activeElement;"
-        + "var idx=-1;"
+        + "var list=candidates();if(!list.length)return;"
+        + "var cur=document.activeElement,idx=-1;"
         + "for(var i=0;i<list.length;i++){if(list[i].el===cur){idx=i;break;}}"
-        + "if(idx<0){focusEl(list[0].el);return;}"
-        + "var cr=list[idx].r;"
-        + "var cx=cr.left+cr.width/2,cy=cr.top+cr.height/2;"
-        + "var best=-1,score=Infinity;"
+        + "if(idx<0){resetFocus();return;}"
+        + "var cr=list[idx].r,cx=cr.left+cr.width/2,cy=cr.top+cr.height/2;"
+        + "var aligned=[],loose=[];"
         + "for(var j=0;j<list.length;j++){"
         + "if(j===idx)continue;"
-        + "var r=list[j].r;"
-        + "var nx=r.left+r.width/2,ny=r.top+r.height/2;"
+        + "var r=list[j].r,nx=r.left+r.width/2,ny=r.top+r.height/2;"
         + "var main=(dx!==0)?(nx-cx)*dx:(ny-cy)*dy;"
-        + "if(main<=0)continue;"
+        + "if(main<=8)continue;"
         + "var cross=(dx!==0)?Math.abs(ny-cy):Math.abs(nx-cx);"
-        + "var s=main+cross*2.5;"
-        + "if(s<score){score=s;best=j;}"
+        + "var tol=(dx!==0)?Math.max(cr.height,r.height)/2:Math.max(cr.width,r.width)/2;"
+        + "var it={j:j,main:main,cross:cross};"
+        + "if(cross<=tol)aligned.push(it);"
+        + "loose.push(it);"
         + "}"
-        + "if(best>=0)focusEl(list[best].el);"
+        + "var pool=aligned.length?aligned:loose;"
+        + "if(!pool.length)return;"
+        + "var pick=pool[0];"
+        + "for(var k=1;k<pool.length;k++){"
+        + "var b=pool[k];"
+        + "if(b.main<pick.main||(b.main===pick.main&&b.cross<pick.cross))pick=b;"
+        + "}"
+        + "focusEl(list[pick.j].el);"
         + "};"
         + "window.__wtaTvActivate=function(){"
         + "var el=document.activeElement;"
@@ -437,11 +478,90 @@ public class M extends Activity {
         + "var installButton=function(){"
         + "if(document.getElementById('__wtaTvSubsBtn'))return;"
         + "btn=document.createElement('button');btn.type='button';btn.id='__wtaTvSubsBtn';btn.textContent='CC';"
+        + "btn.style.display='none';"
         + "btn.onclick=function(){window.__wtaTvSubtitles();};"
         + "(document.body||document.documentElement).appendChild(btn);"
         + "};"
         + "installButton();"
         + "window.addEventListener('load',installButton,false);"
+        + "var subTimer=setInterval(function(){"
+        + "var v=activeVideo();"
+        + "var nativeSubs=!!(v&&v.textTracks&&v.textTracks.length);"
+        + "btn.style.display=(v&&!nativeSubs)?'block':'none';"
+        + "if(!v&&panel&&panel.parentNode){panel.parentNode.removeChild(panel);panel=null;}"
+        + "},300);"
+        + "})();";
+
+    // TV back key. Dismiss in-page modals (login / dialogs) first; otherwise
+    // ask native code to perform a browser back. The activity always consumes
+    // BACK in TV mode, so a page can never accidentally finish the app.
+    private static final String TV_BACK_JS =
+        "(function(){"
+        + "if(window.__wtaTvBackInstalled)return;"
+        + "window.__wtaTvBackInstalled=true;"
+        + "var shown=function(el,minW,minH){"
+        + "if(!el)return false;"
+        + "var st=window.getComputedStyle(el);var r=el.getBoundingClientRect();"
+        + "return !!st&&st.display!=='none'&&st.visibility!=='hidden'&&st.opacity!=='0'&&r.width>=minW&&r.height>=minH;"
+        + "};"
+        + "var isModal=function(el){"
+        + "if(!shown(el,180,120))return false;"
+        + "var st=window.getComputedStyle(el);"
+        + "var z=parseInt(st.zIndex,10);if(isNaN(z))z=0;"
+        + "return (st.position==='fixed'||st.position==='absolute')&&z>=100;"
+        + "};"
+        + "var findModal=function(){"
+        + "var sels=['[aria-modal=true]','[role=dialog]','[class*=modal]','[class*=Modal]','[class*=dialog]','[class*=Dialog]','[class*=popup]','[class*=Popup]','[class*=mask]','[class*=Mask]'];"
+        + "var best=null,area=Infinity;"
+        + "for(var i=0;i<sels.length;i++){"
+        + "var ns=document.querySelectorAll(sels[i]);"
+        + "for(var j=0;j<ns.length;j++){"
+        + "if(!isModal(ns[j]))continue;"
+        + "var r=ns[j].getBoundingClientRect();var a=r.width*r.height;"
+        + "if(a<area){area=a;best=ns[j];}"
+        + "}"
+        + "}"
+        + "if(best)return best;"
+        + "var all=document.querySelectorAll('body *');"
+        + "var vw=window.innerWidth,vh=window.innerHeight;"
+        + "for(var k=0;k<all.length;k++){"
+        + "var e=all[k],st=window.getComputedStyle(e),r=e.getBoundingClientRect();"
+        + "if(st.display==='none'||st.visibility==='hidden'||st.opacity==='0')continue;"
+        + "var z=parseInt(st.zIndex,10);if(isNaN(z)||z<100)continue;"
+        + "if(st.position!=='fixed'&&st.position!=='absolute')continue;"
+        + "if(r.width<vw*0.5||r.height<vh*0.5)continue;"
+        + "var a2=r.width*r.height;if(a2<area){area=a2;best=e;}"
+        + "}"
+        + "return best;"
+        + "};"
+        + "var esc=function(){"
+        + "try{var o={key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true,cancelable:true};"
+        + "document.dispatchEvent(new KeyboardEvent('keydown',o));"
+        + "document.dispatchEvent(new KeyboardEvent('keyup',o));}catch(e){}"
+        + "};"
+        + "var closeLike=function(e){"
+        + "if(!shown(e,4,4))return false;"
+        + "var r=e.getBoundingClientRect();if(r.width>90||r.height>90)return false;"
+        + "var meta=(e.getAttribute('aria-label')||'')+' '+(e.getAttribute('title')||'')+' '+(e.className||'');"
+        + "var txt=(e.textContent||'').trim();"
+        + "return /close|关闭|取消|dismiss/i.test(meta)||/^(×|✕|✖|x|关闭|取消)$/i.test(txt);"
+        + "};"
+        + "var findClose=function(dlg){"
+        + "var ns=(dlg||document).querySelectorAll('button,[role=button],a,span,div,i');"
+        + "for(var k=0;k<ns.length;k++){if(closeLike(ns[k]))return ns[k];}"
+        + "if(dlg){"
+        + "var all=document.querySelectorAll('button,[role=button],a,span,div,i');"
+        + "for(var m=0;m<all.length;m++){if(closeLike(all[m]))return all[m];}"
+        + "}"
+        + "return null;"
+        + "};"
+        + "var log=function(m){try{if(window.WebToApp)window.WebToApp.logBack(m);}catch(e){}};"
+        + "window.__wtaTvBack=function(){"
+        + "var dlg=findModal();"
+        + "if(dlg){var c=findClose(dlg);log(c?'modal-close':'modal-esc');if(c){try{c.click();}catch(e){}}esc();return;}"
+        + "log('no-modal');"
+        + "try{if(window.WebToApp)window.WebToApp.performBack(location.href);}catch(e){}"
+        + "};"
         + "})();";
 
     // Core ad/tracker network blocklist. Stored as a HashSet for O(1) lookups.
@@ -488,9 +608,11 @@ public class M extends Activity {
     private PendingDownload pendingDownload;
     private GeolocationPermissions.Callback pendingGeolocationCallback;
     private String pendingGeolocationOrigin;
+    private String homeUrl;
     private PermissionRequest pendingPermissionRequest;
     private ValueCallback<Uri[]> pendingFileChoiceCallback;
     private FrameLayout fullscreenContainer;
+    private android.widget.Button fullscreenExitButton;
     private View customView;
     private WebChromeClient.CustomViewCallback customViewCallback;
 
@@ -544,6 +666,11 @@ public class M extends Activity {
                 super.onPageFinished(view, url);
                 // shouldOverrideUrlLoading is not called for server-side
                 // redirects, so re-check the landed host in TV mode.
+                if (config != null && config.tvMode) {
+                    Log.d("WebToAppTV", "onPageFinished url=" + url
+                            + " allowed=" + isAllowedNavigationHost(url)
+                            + " startHost=" + config.startHost);
+                }
                 if (config != null && config.tvMode
                         && url != null
                         && (url.startsWith("http://") || url.startsWith("https://"))
@@ -561,6 +688,17 @@ public class M extends Activity {
                 }
                 if (config != null && config.tvMode && config.tvSubtitles) {
                     view.evaluateJavascript(TV_SUBTITLES_JS, null);
+                }
+                if (config != null && config.tvMode) {
+                    // BACK handling is independent of the remote/toggle options.
+                    view.evaluateJavascript(TV_BACK_JS, null);
+                }
+                if (config != null && config.tvMode && homeUrl == null
+                        && url != null
+                        && (url.startsWith("http://") || url.startsWith("https://"))
+                        && isAllowedNavigationHost(url)) {
+                    int q = url.indexOf('?');
+                    homeUrl = q > 0 ? url.substring(0, q) : url;
                 }
             }
             // ── Ad blocker (modern API 21+) ───────────────────────────────
@@ -743,6 +881,16 @@ public class M extends Activity {
             if (loaded.url != null && !loaded.url.isEmpty()) {
                 try { loaded.startHost = Uri.parse(loaded.url).getHost(); } catch (Throwable ignored) {}
             }
+            // Many sites redirect mobile WebView UAs between www./m./bare
+            // hosts. Treat those as the same site so TV mode does not bounce
+            // back to the start URL in an endless "off-site" loop.
+            if (loaded.tvMode && loaded.startHost != null) {
+                String host = loaded.startHost.toLowerCase(Locale.US);
+                String bare = host;
+                if (bare.startsWith("www.")) bare = bare.substring(4);
+                else if (bare.startsWith("m.")) bare = bare.substring(2);
+                if (!bare.isEmpty()) loaded.tvNavHosts.add(bare);
+            }
         } catch (Throwable ignored) {}
         return loaded;
     }
@@ -915,6 +1063,22 @@ public class M extends Activity {
             if (fullscreenContainer == null) {
                 fullscreenContainer = new FrameLayout(M.this);
                 fullscreenContainer.setBackgroundColor(Color.BLACK);
+                fullscreenExitButton = new android.widget.Button(M.this);
+                fullscreenExitButton.setText("退出全屏");
+                fullscreenExitButton.setTextColor(Color.WHITE);
+                fullscreenExitButton.setBackgroundColor(Color.argb(150, 0, 0, 0));
+                fullscreenExitButton.setFocusable(true);
+                FrameLayout.LayoutParams exitLp = new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    android.view.Gravity.TOP | android.view.Gravity.LEFT);
+                exitLp.setMargins(24, 24, 0, 0);
+                fullscreenContainer.addView(fullscreenExitButton, exitLp);
+                fullscreenExitButton.setOnClickListener(new View.OnClickListener() {
+                    @Override public void onClick(View v) {
+                        onHideCustomView();
+                    }
+                });
             }
             customView = view;
             customViewCallback = callback;
@@ -924,7 +1088,12 @@ public class M extends Activity {
             fullscreenContainer.addView(view, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
+            fullscreenExitButton.bringToFront();
+            fullscreenContainer.setVisibility(View.VISIBLE);
+            view.setFocusable(true);
+            view.setFocusableInTouchMode(true);
             setContentView(fullscreenContainer);
+            view.requestFocus();
         }
 
         @Override public void onHideCustomView() {
@@ -1074,10 +1243,31 @@ public class M extends Activity {
         // Centre of the injected fullscreen button in WebView pixel coords.
         float fullscreenX = -1f;
         float fullscreenY = -1f;
+        // Whether the current page focus is on the injected fullscreen button.
+        // OK must send a trusted touch there for requestFullscreen(); any other
+        // focused element must be activated through __wtaTvActivate() instead.
+        boolean focusIsFsBtn = true;
 
         @JavascriptInterface public void setFullscreenButtonRect(float x, float y) {
             fullscreenX = x;
             fullscreenY = y;
+        }
+
+        @JavascriptInterface public void setFocusIsFsBtn(boolean value) {
+            focusIsFsBtn = value;
+        }
+
+        // Called by the injected back script only when no in-page modal was
+        // found. Carries the real SPA URL (more reliable than WebView.getUrl()).
+        @JavascriptInterface public void performBack(final String currentUrl) {
+            if (webView == null) return;
+            webView.post(new Runnable() {
+                @Override public void run() { performBrowserBack(currentUrl); }
+            });
+        }
+
+        @JavascriptInterface public void logBack(String info) {
+            Log.d("WebToAppTV", "BACK " + info);
         }
 
         @JavascriptInterface public void saveFile(String dataUrl, String fileName, String mimeType) {
@@ -1382,6 +1572,22 @@ public class M extends Activity {
      * the same key, which would move focus twice or click twice.
      */
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        // In native WebView fullscreen the WebView is detached, so page JS can
+        // no longer see these keys. Route them to the native player instead.
+        if (customView != null) {
+            return handleFullscreenKey(event);
+        }
+        // TV mode owns BACK: dismiss a modal, else do a browser back. Consuming
+        // both DOWN and UP here prevents the system from ever finishing the app
+        // while the user is on a sub-page.
+        if (config != null && config.tvMode
+                && event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && webView != null) {
+                webView.evaluateJavascript(
+                    "typeof __wtaTvBack==='function'&&__wtaTvBack()", null);
+            }
+            return true;
+        }
         if (config != null && config.tvMode && config.tvRemote && webView != null) {
             int action = event.getAction();
             int keyCode = event.getKeyCode();
@@ -1403,21 +1609,30 @@ public class M extends Activity {
                 if (keyCode == KeyEvent.KEYCODE_ENTER
                         || keyCode == KeyEvent.KEYCODE_DPAD_CENTER
                         || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER) {
-                    // evaluateJavascript().click() is not a trusted gesture, so
-                    // Fullscreen API rejects it. Route OK through a real touch
-                    // on the injected button instead; WebView then grants
-                    // user activation and its own fullscreen path kicks in.
-                    if (action == KeyEvent.ACTION_DOWN && webBridge != null
-                            && webBridge.fullscreenX >= 0f && webBridge.fullscreenY >= 0f) {
-                        long t = SystemClock.uptimeMillis();
-                        MotionEvent down = MotionEvent.obtain(
-                            t, t, MotionEvent.ACTION_DOWN,
-                            webBridge.fullscreenX, webBridge.fullscreenY, 0);
-                        webView.dispatchTouchEvent(down);
-                        MotionEvent up = MotionEvent.obtain(
-                            t, t, MotionEvent.ACTION_UP,
-                            webBridge.fullscreenX, webBridge.fullscreenY, 0);
-                        webView.dispatchTouchEvent(up);
+                    // Focus on the injected fullscreen button: only a trusted
+                    // touch can grant requestFullscreen(), so synthesize one
+                    // there. Every OTHER focused element (movie card, link,
+                    // player control) is activated through its own click
+                    // handler via __wtaTvActivate() — touching the fullscreen
+                    // button unconditionally made cards look unresponsive.
+                    if (action == KeyEvent.ACTION_DOWN && webBridge != null) {
+                        Log.d("WebToAppTV", "OK focusIsFsBtn=" + webBridge.focusIsFsBtn
+                                + " fsX=" + webBridge.fullscreenX + " fsY=" + webBridge.fullscreenY);
+                        if (webBridge.focusIsFsBtn
+                                && webBridge.fullscreenX >= 0f && webBridge.fullscreenY >= 0f) {
+                            long t = SystemClock.uptimeMillis();
+                            MotionEvent down = MotionEvent.obtain(
+                                t, t, MotionEvent.ACTION_DOWN,
+                                webBridge.fullscreenX, webBridge.fullscreenY, 0);
+                            webView.dispatchTouchEvent(down);
+                            MotionEvent up = MotionEvent.obtain(
+                                t, t, MotionEvent.ACTION_UP,
+                                webBridge.fullscreenX, webBridge.fullscreenY, 0);
+                            webView.dispatchTouchEvent(up);
+                        } else {
+                            webView.evaluateJavascript(
+                                "typeof __wtaTvActivate==='function'&&__wtaTvActivate()", null);
+                        }
                     }
                     return true;
                 }
@@ -1453,6 +1668,111 @@ public class M extends Activity {
             || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT;
     }
 
+    private static android.widget.VideoView findVideoView(View v) {
+        if (v instanceof android.widget.VideoView) return (android.widget.VideoView) v;
+        if (v instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) v;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                android.widget.VideoView found = findVideoView(group.getChildAt(i));
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
+    private void runFullscreenJsMedia(String action) {
+        if (webView == null) return;
+        if ("captions".equals(action)) {
+            webView.evaluateJavascript(
+                "typeof __wtaTvSubtitles==='function'&&__wtaTvSubtitles()", null);
+            return;
+        }
+        webView.evaluateJavascript(
+            "typeof __wtaTvMedia==='function'&&__wtaTvMedia('" + action + "')", null);
+    }
+
+    private boolean dispatchFullscreenKey(KeyEvent event) {
+        if (customView == null) return false;
+        if (customView.dispatchKeyEvent(event)) return true;
+        View focused = customView.findFocus();
+        if (focused != null && focused != customView && focused.dispatchKeyEvent(event)) {
+            return true;
+        }
+        android.widget.VideoView vv = findVideoView(customView);
+        return vv != null && vv.dispatchKeyEvent(event);
+    }
+
+    private boolean handleFullscreenKey(KeyEvent event) {
+        int action = event.getAction();
+        int keyCode = event.getKeyCode();
+        if (action != KeyEvent.ACTION_DOWN && action != KeyEvent.ACTION_UP) {
+            return super.dispatchKeyEvent(event);
+        }
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            if (action == KeyEvent.ACTION_DOWN && webView != null) {
+                webView.getWebChromeClient().onHideCustomView();
+            }
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+            if (action == KeyEvent.ACTION_DOWN && fullscreenExitButton != null) {
+                fullscreenExitButton.requestFocus();
+            }
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+            if (action == KeyEvent.ACTION_DOWN) customView.requestFocus();
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_ENTER
+                || keyCode == KeyEvent.KEYCODE_DPAD_CENTER
+                || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER) {
+            if (action == KeyEvent.ACTION_DOWN) {
+                if (fullscreenExitButton != null && fullscreenExitButton.hasFocus()) {
+                    fullscreenExitButton.performClick();
+                } else {
+                    // Native media controls rarely take focus from a remote,
+                    // so make OK a reliable play/pause toggle as well.
+                    runFullscreenJsMedia("toggle");
+                    dispatchFullscreenKey(event);
+                }
+            }
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+            if (action == KeyEvent.ACTION_DOWN) {
+                // The Chromium custom view often ignores KeyEvents, but the
+                // WebView JS engine keeps running while detached, so drive the
+                // same <video> element there and try native as a fallback.
+                String seek = keyCode == KeyEvent.KEYCODE_DPAD_LEFT ? "rw" : "ff";
+                runFullscreenJsMedia(seek);
+                int seekCode = keyCode == KeyEvent.KEYCODE_DPAD_LEFT
+                    ? KeyEvent.KEYCODE_MEDIA_REWIND
+                    : KeyEvent.KEYCODE_MEDIA_FAST_FORWARD;
+                long t = SystemClock.uptimeMillis();
+                dispatchFullscreenKey(new KeyEvent(t, t, KeyEvent.ACTION_DOWN, seekCode, 0));
+                dispatchFullscreenKey(new KeyEvent(t, t, KeyEvent.ACTION_UP, seekCode, 0));
+            }
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_CAPTIONS) {
+            if (action == KeyEvent.ACTION_DOWN) {
+                if (!dispatchFullscreenKey(event)) runFullscreenJsMedia("captions");
+            }
+            return true;
+        }
+        String media = tvMediaAction(keyCode);
+        if (media != null) {
+            if (action == KeyEvent.ACTION_DOWN) {
+                runFullscreenJsMedia(media);
+                dispatchFullscreenKey(event);
+            }
+            return true;
+        }
+        if (dispatchFullscreenKey(event)) return true;
+        return super.dispatchKeyEvent(event);
+    }
+
     private static String tvMediaAction(int keyCode) {
         switch (keyCode) {
             case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
@@ -1483,13 +1803,45 @@ public class M extends Activity {
         if (hasFocus) applyImmersiveMode();
     }
 
+    /** True when the current page is the site's landing page (root path). */
+    private boolean isHomePage(String url) {
+        if (url == null || url.isEmpty()) return true;
+        try {
+            String path = Uri.parse(url).getPath();
+            if (path == null || path.isEmpty() || path.equals("/")) return true;
+            if (homeUrl != null) {
+                String homePath = Uri.parse(homeUrl).getPath();
+                if (homePath != null && homePath.equals(path)) return true;
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    /**
+     * BACK on a sub-page must never finish the app. Prefer the browser history;
+     * when the stack is empty (deep link / SPA), fall back to the launch URL.
+     * Only the actual home page is allowed to close the activity.
+     */
+    private void performBrowserBack(String currentUrl) {
+        if (webView == null) return;
+        if (customView != null) {
+            webView.getWebChromeClient().onHideCustomView();
+            return;
+        }
+        if (!isHomePage(currentUrl)) {
+            if (webView.canGoBack()) webView.goBack();
+            else if (config != null && config.url != null) webView.loadUrl(config.url);
+            return;
+        }
+        super.onBackPressed();
+    }
+
     @Override public void onBackPressed() {
         if (customView != null && webView != null) {
             webView.getWebChromeClient().onHideCustomView();
             return;
         }
-        if (webView != null && webView.canGoBack()) webView.goBack();
-        else super.onBackPressed();
+        performBrowserBack(webView != null ? webView.getUrl() : null);
     }
 
     @Override protected void onDestroy() {

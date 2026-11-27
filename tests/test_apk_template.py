@@ -254,6 +254,101 @@ def test_tv_fullscreen_uses_a_trusted_click_button():
     # touch on the injected button instead of evaluateJavascript().click().
     assert "MotionEvent.ACTION_DOWN" in ACTIVITY_JAVA
     assert "setFullscreenButtonRect" in ACTIVITY_JAVA
+    # SPAs render <video> after onPageFinished, so the button focuses itself
+    # via a short polling timer rather than a one-shot check at injection.
+    assert "var fsTimer=setInterval(function()" in js
+    assert "querySelector('video')" in js
+    # The four TV buttons must exist only on pages that actually have video.
+    assert "btn.style.display='none'" in js
+    assert "btn.style.display=v?'block':'none'" in js
+
+
+def test_tv_cc_button_hidden_when_native_subtitles_exist():
+    block = ACTIVITY_JAVA.split(
+        "private static final String TV_SUBTITLES_JS =", 1)[1].split(
+        "// Core ad/tracker network blocklist", 1)[0]
+    js = "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', block))
+    assert "btn.style.display='none'" in js
+    assert "v.textTracks&&v.textTracks.length" in js
+    assert "btn.style.display=(v&&!nativeSubs)?'block':'none'" in js
+
+
+def test_tv_focus_reaches_clickable_divs():
+    block = ACTIVITY_JAVA.split(
+        "private static final String TV_REMOTE_JS =", 1)[1].split(
+        "// TV subtitles:", 1)[0]
+    js = "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', block))
+    # Site floating buttons (home/theme) are plain divs with cursor:pointer.
+    assert "div,span,li'" in js
+    assert "st.cursor==='pointer'" in js
+    assert "el.setAttribute('tabindex','-1')" in js
+    # Every page starts at the top-left element; SPA navigation resets it too.
+    assert "var topLeft=function()" in js
+    assert "var resetFocus=function()" in js
+    assert "setInterval(checkHref,400)" in js
+    # Strict directional movement: only elements in the pressed direction,
+    # preferring same-row / same-column aligned targets.
+    assert "if(main<=8)continue;" in js
+    assert "var pool=aligned.length?aligned:loose;" in js
+
+
+def test_tv_back_never_finishes_app_on_subpages():
+    assert "private boolean isHomePage(String url)" in ACTIVITY_JAVA
+    assert "private void performBrowserBack(String currentUrl)" in ACTIVITY_JAVA
+    assert "if (!isHomePage(currentUrl))" in ACTIVITY_JAVA
+    assert "if (webView.canGoBack()) webView.goBack();" in ACTIVITY_JAVA
+    assert "else if (config != null && config.url != null) webView.loadUrl(config.url);" in ACTIVITY_JAVA
+    # BACK is consumed by dispatchKeyEvent in TV mode (both DOWN and UP).
+    assert "event.getKeyCode() == KeyEvent.KEYCODE_BACK" in ACTIVITY_JAVA
+    assert "__wtaTvBack==='function'&&__wtaTvBack()" in ACTIVITY_JAVA
+    assert "performBrowserBack(webView != null ? webView.getUrl() : null);" in ACTIVITY_JAVA
+    assert "view.evaluateJavascript(TV_BACK_JS, null)" in ACTIVITY_JAVA
+
+
+def test_tv_back_closes_modals_before_navigating():
+    block = ACTIVITY_JAVA.split(
+        "private static final String TV_BACK_JS =", 1)[1].split(
+        "// Core ad/tracker network blocklist", 1)[0]
+    js = "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', block))
+    assert "window.__wtaTvBack=function()" in js
+    assert "var findModal=function()" in js
+    assert "var findClose=function(dlg)" in js
+    assert "new KeyboardEvent('keydown'" in js
+    assert "window.WebToApp.performBack(location.href)" in js
+    assert "var closeLike=function(e)" in js
+    assert "var log=function(m)" in js
+    assert "performBack(final String currentUrl)" in ACTIVITY_JAVA
+    assert "logBack(String info)" in ACTIVITY_JAVA
+
+
+def test_tv_native_fullscreen_routes_keys_and_has_exit_control():
+    assert "private android.widget.Button fullscreenExitButton;" in ACTIVITY_JAVA
+    assert "fullscreenExitButton.setOnClickListener" in ACTIVITY_JAVA
+    assert "fullscreenExitButton.bringToFront()" in ACTIVITY_JAVA
+    assert "if (customView != null) {" in ACTIVITY_JAVA
+    assert "return handleFullscreenKey(event);" in ACTIVITY_JAVA
+    assert "private boolean handleFullscreenKey(KeyEvent event)" in ACTIVITY_JAVA
+    assert "private boolean dispatchFullscreenKey(KeyEvent event)" in ACTIVITY_JAVA
+    assert "private void runFullscreenJsMedia(String action)" in ACTIVITY_JAVA
+    assert "__wtaTvMedia==='function'&&__wtaTvMedia('" in ACTIVITY_JAVA
+    assert "KEYCODE_MEDIA_REWIND" in ACTIVITY_JAVA
+
+
+def test_tv_ok_activates_focused_element_not_always_fullscreen():
+    # OK on a movie card must click THAT card; only the injected fullscreen
+    # button gets the synthetic trusted touch required by requestFullscreen().
+    assert "boolean focusIsFsBtn = true;" in ACTIVITY_JAVA
+    assert "setFocusIsFsBtn(boolean value)" in ACTIVITY_JAVA
+    assert "webBridge.focusIsFsBtn" in ACTIVITY_JAVA
+    assert "__wtaTvActivate==='function'&&__wtaTvActivate()" in ACTIVITY_JAVA
+    remote = ACTIVITY_JAVA.split(
+        "private static final String TV_REMOTE_JS =", 1)[1].split(
+        "// TV subtitles:", 1)[0]
+    js = "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', remote))
+    assert "setFocusIsFsBtn" in js
+    assert "focusin" in js
+    assert "window.__wtaTvActivate=function()" in js
+    assert "el.click();" in js
 
 
 def test_tv_navigation_guard_is_enforced():
@@ -263,6 +358,15 @@ def test_tv_navigation_guard_is_enforced():
     assert "if (tvMode) return true;" in ACTIVITY_JAVA
     # Server redirects never reach shouldOverrideUrlLoading.
     assert "!isAllowedNavigationHost(url)" in ACTIVITY_JAVA
+
+
+def test_tv_navigation_allows_mobile_bare_host_variant():
+    # Sites that redirect mobile WebView UAs between www./m./bare hosts must
+    # not be bounced back to the start URL forever by the TV guard.
+    assert "if (loaded.tvMode && loaded.startHost != null)" in ACTIVITY_JAVA
+    assert 'bare.startsWith("www.")' in ACTIVITY_JAVA
+    assert 'bare.startsWith("m.")' in ACTIVITY_JAVA
+    assert "loaded.tvNavHosts.add(bare)" in ACTIVITY_JAVA
 
 
 def test_tv_options_reach_apk_config():
