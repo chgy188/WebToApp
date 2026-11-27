@@ -321,6 +321,36 @@ def test_tv_back_closes_modals_before_navigating():
     assert "logBack(String info)" in ACTIVITY_JAVA
 
 
+def test_tv_back_escalates_until_modal_gives_up():
+    # A site login popup whose × is not a plain click target used to eat BACK
+    # forever: every press re-tried the same close button and never reached
+    # browser-back, so the user could neither close it, go back, nor quit.
+    block = ACTIVITY_JAVA.split(
+        "private static final String TV_BACK_JS =", 1)[1].split(
+        "// Core ad/tracker network blocklist", 1)[0]
+    js = "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', block))
+    assert '"' not in js
+    assert "var state={sig:'',tries:0}" in js
+    for step in ("state.tries===1", "state.tries===2", "state.tries===3",
+                 "modal-giveup", "modal-corner", "modal-history"):
+        assert step in js
+    # Escalation: close button -> corner/backdrop touch -> history.back() ->
+    # native browser back (which finishes the app on the home page).
+    assert "var backdropOf=function(dlg)" in js
+    assert "var closeAtCorner=function(dlg)" in js
+    assert "var touch=function(el)" in js
+    assert "window.history.back()" in js
+    assert "window.WebToApp.performBack(location.href)" in js
+
+
+def test_tv_back_held_exits_app_as_last_resort():
+    # The TV guard consumes BACK unconditionally, so a modal that survives all
+    # escalation steps would leave no way out. A held BACK must always quit.
+    assert "private void exitApp()" in ACTIVITY_JAVA
+    assert "finishAffinity();" in ACTIVITY_JAVA
+    assert "event.getRepeatCount() >= 12" in ACTIVITY_JAVA
+
+
 def test_tv_native_fullscreen_routes_keys_and_has_exit_control():
     assert "private android.widget.Button fullscreenExitButton;" in ACTIVITY_JAVA
     assert "fullscreenExitButton.setOnClickListener" in ACTIVITY_JAVA

@@ -505,10 +505,10 @@ public class M extends Activity {
         + "return !!st&&st.display!=='none'&&st.visibility!=='hidden'&&st.opacity!=='0'&&r.width>=minW&&r.height>=minH;"
         + "};"
         + "var isModal=function(el){"
-        + "if(!shown(el,180,120))return false;"
+        + "if(!shown(el,120,80))return false;"
         + "var st=window.getComputedStyle(el);"
         + "var z=parseInt(st.zIndex,10);if(isNaN(z))z=0;"
-        + "return (st.position==='fixed'||st.position==='absolute')&&z>=100;"
+        + "return (st.position==='fixed'||st.position==='absolute')&&z>=50;"
         + "};"
         + "var findModal=function(){"
         + "var sels=['[aria-modal=true]','[role=dialog]','[class*=modal]','[class*=Modal]','[class*=dialog]','[class*=Dialog]','[class*=popup]','[class*=Popup]','[class*=mask]','[class*=Mask]'];"
@@ -527,9 +527,9 @@ public class M extends Activity {
         + "for(var k=0;k<all.length;k++){"
         + "var e=all[k],st=window.getComputedStyle(e),r=e.getBoundingClientRect();"
         + "if(st.display==='none'||st.visibility==='hidden'||st.opacity==='0')continue;"
-        + "var z=parseInt(st.zIndex,10);if(isNaN(z)||z<100)continue;"
+        + "var z=parseInt(st.zIndex,10);if(isNaN(z)||z<50)continue;"
         + "if(st.position!=='fixed'&&st.position!=='absolute')continue;"
-        + "if(r.width<vw*0.5||r.height<vh*0.5)continue;"
+        + "if(r.width<vw*0.45||r.height<vh*0.45)continue;"
         + "var a2=r.width*r.height;if(a2<area){area=a2;best=e;}"
         + "}"
         + "return best;"
@@ -537,7 +537,9 @@ public class M extends Activity {
         + "var esc=function(){"
         + "try{var o={key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true,cancelable:true};"
         + "document.dispatchEvent(new KeyboardEvent('keydown',o));"
-        + "document.dispatchEvent(new KeyboardEvent('keyup',o));}catch(e){}"
+        + "window.dispatchEvent(new KeyboardEvent('keydown',o));"
+        + "document.dispatchEvent(new KeyboardEvent('keyup',o));"
+        + "window.dispatchEvent(new KeyboardEvent('keyup',o));}catch(e){}"
         + "};"
         + "var closeLike=function(e){"
         + "if(!shown(e,4,4))return false;"
@@ -556,10 +558,47 @@ public class M extends Activity {
         + "return null;"
         + "};"
         + "var log=function(m){try{if(window.WebToApp)window.WebToApp.logBack(m);}catch(e){}};"
+        + "var touch=function(el){"
+        + "if(!el)return;"
+        + "try{var r=el.getBoundingClientRect();var x=r.left+r.width/2,y=r.top+r.height/2;"
+        + "var o={bubbles:true,cancelable:true,clientX:x,clientY:y};"
+        + "el.dispatchEvent(new MouseEvent('mousedown',o));"
+        + "el.dispatchEvent(new MouseEvent('mouseup',o));}catch(e){}"
+        + "try{el.click();}catch(e){}"
+        + "};"
+        + "var sigOf=function(dlg){"
+        + "var r=dlg.getBoundingClientRect();"
+        + "var cls=String(dlg.className||'').slice(0,40);"
+        + "return Math.round(r.left)+':'+Math.round(r.top)+':'+Math.round(r.width)+':'+Math.round(r.height)+':'+cls;"
+        + "};"
+        + "var backdropOf=function(dlg){"
+        + "var p=dlg.parentElement,vw=window.innerWidth,vh=window.innerHeight;"
+        + "for(var i=0;i<4&&p;i++){"
+        + "var r=p.getBoundingClientRect();"
+        + "if(r.width>=vw*0.8&&r.height>=vh*0.8)return p;"
+        + "p=p.parentElement;}"
+        + "return null;"
+        + "};"
+        + "var closeAtCorner=function(dlg){"
+        + "var r=dlg.getBoundingClientRect();"
+        + "var pts=[[r.right-18,r.top+18],[r.right-18,r.top+44],[r.left+18,r.top+18],[r.right-18,r.bottom-18]];"
+        + "for(var i=0;i<pts.length;i++){"
+        + "var el=document.elementFromPoint(pts[i][0],pts[i][1]);"
+        + "if(el&&dlg.contains(el)){touch(el);return true;}}"
+        + "return false;"
+        + "};"
+        + "var state={sig:'',tries:0};"
         + "window.__wtaTvBack=function(){"
         + "var dlg=findModal();"
-        + "if(dlg){var c=findClose(dlg);log(c?'modal-close':'modal-esc');if(c){try{c.click();}catch(e){}}esc();return;}"
-        + "log('no-modal');"
+        + "if(!dlg){state.sig='';state.tries=0;log('no-modal');"
+        + "try{if(window.WebToApp)window.WebToApp.performBack(location.href);}catch(e){}return;}"
+        + "var sig=sigOf(dlg);"
+        + "if(sig!==state.sig){state.sig=sig;state.tries=0;}"
+        + "state.tries++;"
+        + "if(state.tries===1){var c=findClose(dlg);log(c?'modal-close':'modal-esc');if(c)touch(c);esc();return;}"
+        + "if(state.tries===2){log('modal-corner');if(!closeAtCorner(dlg)){var b=backdropOf(dlg);if(b)touch(b);}esc();return;}"
+        + "if(state.tries===3){log('modal-history');esc();try{window.history.back();}catch(e){}return;}"
+        + "log('modal-giveup');state.sig='';state.tries=0;esc();"
         + "try{if(window.WebToApp)window.WebToApp.performBack(location.href);}catch(e){}"
         + "};"
         + "})();";
@@ -1572,6 +1611,16 @@ public class M extends Activity {
      * the same key, which would move focus twice or click twice.
      */
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        // Emergency exit: a held BACK must always work. In TV mode BACK is
+        // consumed by the page and by fullscreen handling, so a login popup
+        // that refuses to close would otherwise trap the user with no way to
+        // close it, go back, or quit the app.
+        if (event.getKeyCode() == KeyEvent.KEYCODE_BACK
+                && event.getAction() == KeyEvent.ACTION_DOWN
+                && event.getRepeatCount() >= 12) {
+            exitApp();
+            return true;
+        }
         // In native WebView fullscreen the WebView is detached, so page JS can
         // no longer see these keys. Route them to the native player instead.
         if (customView != null) {
@@ -1844,6 +1893,20 @@ public class M extends Activity {
         performBrowserBack(webView != null ? webView.getUrl() : null);
     }
 
+    /**
+     * Leave the app no matter what state the page is in. Used only by the
+     * held-BACK escape hatch: the TV navigation guard deliberately swallows
+     * BACK so a page can never kill the app by accident, which also means a
+     * site popup can otherwise keep the user captive forever.
+     */
+    private void exitApp() {
+        try {
+            finishAffinity();
+        } catch (Throwable ignored) {
+            finish();
+        }
+    }
+
     @Override protected void onDestroy() {
         pendingDownload = null;
         pendingGeolocationCallback = null;
@@ -1926,7 +1989,7 @@ class ApkBuilder:
     # silently serve a stale cached template — the old hand-bumped constant
     # relied on developers remembering to change it (AGENTS.md even documented
     # a manual cache-delete workaround for exactly that failure mode).
-    TEMPLATE_REVISION = "2026-11-27-tv-gesture-2"
+    TEMPLATE_REVISION = "2026-11-27-tv-escape-3"
 
     @classmethod
     def _template_revision(cls) -> str:
