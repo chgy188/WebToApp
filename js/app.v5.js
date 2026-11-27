@@ -133,6 +133,11 @@
   const androidPackagePrefixInput = document.getElementById('android-package-prefix');
   const immersiveFullscreenInput = document.getElementById('feature-immersive-fullscreen');
   const desktopModeInput = document.getElementById('feature-desktop-mode');
+  const tvModeInput = document.getElementById('feature-tv-mode');
+  const tvAutoFullscreenInput = document.getElementById('feature-tv-auto-fullscreen');
+  const tvRemoteInput = document.getElementById('feature-tv-remote');
+  const tvSubtitlesInput = document.getElementById('feature-tv-subtitles');
+  const tvExtraHostsInput = document.getElementById('feature-tv-extra-hosts');
   const windowsWidthInput = document.getElementById('windows-window-width');
   const windowsHeightInput = document.getElementById('windows-window-height');
   const windowsMaximizedInput = document.getElementById('windows-window-maximized');
@@ -366,10 +371,34 @@
   }
   restoreIconButtonLabel = t('icon.noRestore');
 
+  function sanitizeTvHosts(value) {
+    const parts = Array.isArray(value)
+      ? value
+      : String(value || '').split(/[,;\s]+/);
+    const hosts = [];
+    parts.forEach((part) => {
+      let host = String(part || '').trim().toLowerCase();
+      if (host.indexOf('://') !== -1) host = host.split('://')[1];
+      host = host.split('/')[0].split(':')[0].replace(/^\.+|\.+$/g, '');
+      if (host.indexOf('.') > 0 && /^[a-z0-9.-]+$/.test(host) && hosts.indexOf(host) === -1 && hosts.length < 20) {
+        hosts.push(host);
+      }
+    });
+    return hosts;
+  }
+
   function normalizeFeatureOptions(raw) {
     const options = raw && typeof raw === 'object' ? raw : {};
     const immersiveFullscreen = options['feature-immersive-fullscreen'] === true || options.feature_immersive_fullscreen === true;
     const desktopMode = options['feature-desktop-mode'] === true || options.feature_desktop_mode === true;
+    const tvMode = options['feature-tv-mode'] === true || options.feature_tv_mode === true;
+    const tvAutoFullscreen = options['feature-tv-auto-fullscreen'] === true || options.feature_tv_auto_fullscreen === true;
+    const tvRemote = options['feature-tv-remote'] === true || options.feature_tv_remote === true;
+    const tvSubtitles = options['feature-tv-subtitles'] === true || options.feature_tv_subtitles === true;
+    const rawTvHosts = options['feature-tv-extra-hosts'] != null
+      ? options['feature-tv-extra-hosts']
+      : options.feature_tv_extra_hosts;
+    const tvExtraHosts = sanitizeTvHosts(rawTvHosts);
     const windowOpts = {};
     ['windows', 'linux'].forEach((prefix) => {
       windowOpts[`${prefix}-window-width`] = sanitizeWindowSize(
@@ -384,6 +413,11 @@
     return {
       immersiveFullscreen,
       desktopMode,
+      tvMode,
+      tvAutoFullscreen,
+      tvRemote,
+      tvSubtitles,
+      tvExtraHosts,
       ...windowOpts,
     };
   }
@@ -392,6 +426,11 @@
     const options = normalizeFeatureOptions(raw);
     immersiveFullscreenInput.checked = options.immersiveFullscreen;
     desktopModeInput.checked = options.desktopMode;
+    tvModeInput.checked = options.tvMode;
+    tvAutoFullscreenInput.checked = options.tvAutoFullscreen;
+    tvRemoteInput.checked = options.tvRemote;
+    tvSubtitlesInput.checked = options.tvSubtitles;
+    syncInputValue(tvExtraHostsInput, options.tvExtraHosts.join(', '));
     syncInputValue(windowsWidthInput, options['windows-window-width'] ? String(options['windows-window-width']) : '');
     syncInputValue(windowsHeightInput, options['windows-window-height'] ? String(options['windows-window-height']) : '');
     windowsMaximizedInput.checked = options['windows-window-maximized'];
@@ -404,6 +443,11 @@
     const featureOptions = normalizeFeatureOptions({
       'feature-immersive-fullscreen': immersiveFullscreenInput.checked,
       'feature-desktop-mode': desktopModeInput.checked,
+      'feature-tv-mode': tvModeInput.checked,
+      'feature-tv-auto-fullscreen': tvAutoFullscreenInput.checked,
+      'feature-tv-remote': tvRemoteInput.checked,
+      'feature-tv-subtitles': tvSubtitlesInput.checked,
+      'feature-tv-extra-hosts': tvExtraHostsInput.value,
       'windows-window-width': windowsWidthInput.value,
       'windows-window-height': windowsHeightInput.value,
       'windows-window-maximized': windowsMaximizedInput.checked,
@@ -414,6 +458,11 @@
     return {
       'feature-immersive-fullscreen': featureOptions.immersiveFullscreen,
       'feature-desktop-mode': featureOptions.desktopMode,
+      'feature-tv-mode': featureOptions.tvMode,
+      'feature-tv-auto-fullscreen': featureOptions.tvAutoFullscreen,
+      'feature-tv-remote': featureOptions.tvRemote,
+      'feature-tv-subtitles': featureOptions.tvSubtitles,
+      'feature-tv-extra-hosts': featureOptions.tvExtraHosts,
       'windows-window-width': featureOptions['windows-window-width'],
       'windows-window-height': featureOptions['windows-window-height'],
       'windows-window-maximized': featureOptions['windows-window-maximized'],

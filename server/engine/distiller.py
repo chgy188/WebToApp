@@ -436,6 +436,37 @@ class Distiller:
         raw = re.sub(r"\s+", " ", raw)
         return raw[:80]
 
+    @staticmethod
+    def _nav_host_list(options):
+        """Normalize the TV-mode extra-host field into bare hostnames.
+
+        The value comes from a free-text field, so never let a scheme, path or
+        wildcard reach the APK's navigation guard.
+        """
+        raw = options.get("feature-tv-extra-hosts")
+        if raw is None:
+            raw = options.get("feature_tv_extra_hosts")
+        if isinstance(raw, str):
+            parts = re.split(r"[,;\s]+", raw)
+        elif isinstance(raw, (list, tuple)):
+            parts = []
+            for item in raw:
+                parts.extend(re.split(r"[,;\s]+", str(item)))
+        else:
+            parts = []
+        hosts = []
+        for part in parts:
+            host = str(part).strip().lower()
+            if "://" in host:
+                host = host.split("://", 1)[1]
+            host = host.split("/", 1)[0].split(":", 1)[0].strip(".")
+            if re.fullmatch(r"[a-z0-9.-]+", host) and "." in host and len(host) <= 253:
+                if host not in hosts:
+                    hosts.append(host)
+            if len(hosts) >= 20:
+                break
+        return hosts
+
     def _feature_options(self, options):
         raw = options or {}
         normalized = {
@@ -445,6 +476,17 @@ class Distiller:
             "feature-desktop-mode": bool(
                 raw.get("feature-desktop-mode") or raw.get("feature_desktop_mode")
             ),
+            "feature-tv-mode": bool(raw.get("feature-tv-mode") or raw.get("feature_tv_mode")),
+            "feature-tv-auto-fullscreen": bool(
+                raw.get("feature-tv-auto-fullscreen") or raw.get("feature_tv_auto_fullscreen")
+            ),
+            "feature-tv-remote": bool(
+                raw.get("feature-tv-remote") or raw.get("feature_tv_remote")
+            ),
+            "feature-tv-subtitles": bool(
+                raw.get("feature-tv-subtitles") or raw.get("feature_tv_subtitles")
+            ),
+            "feature-tv-extra-hosts": self._nav_host_list(raw),
         }
         # Desktop browser-app shells (Windows .bat, Linux .desktop) honor
         # Chromium's --window-size / --start-maximized flags. Each OS gets its
