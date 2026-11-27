@@ -218,11 +218,13 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.SystemClock;
 import android.provider.MediaStore;
 import android.util.Base64;
 import android.util.Log;
 import android.graphics.Color;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
@@ -265,32 +267,34 @@ public class M extends Activity {
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
         + "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
-    // TV mode: watch for a <video> that actually starts playing, then ask the
-    // WebView to enter HTML5 fullscreen. The snippet has no double quotes so
-    // neither the Java string nor the Python template needs extra escaping.
-    private static final String TV_AUTO_FULLSCREEN_JS =
+    // TV mode: WebView only grants fullscreen from a trusted user gesture, so
+    // a scripted requestFullscreen() on playback is rejected. Inject a focused
+    // fullscreen button instead: one OK press on the remote is a real gesture
+    // and drives WebView's own fullscreen path (no ExoPlayer involved).
+    private static final String TV_FULLSCREEN_JS =
         "(function(){"
         + "if(window.__wtaTvFsInstalled)return;"
         + "window.__wtaTvFsInstalled=true;"
-        + "var tries=0;"
-        + "var go=function(v){"
-        + "v.__wtaTvFsTried=true;"
-        + "try{if(v.requestFullscreen){v.requestFullscreen();return true;}}catch(e){}"
-        + "try{if(v.webkitRequestFullscreen){v.webkitRequestFullscreen();return true;}}catch(e){}"
-        + "return false;"
+        + "var style=document.createElement('style');"
+        + "style.id='__wtaTvFsStyle';"
+        + "style.textContent='#__wtaTvFsBtn{position:fixed;left:24px;top:24px;z-index:2147483647;background:rgba(0,0,0,.72);color:#fff;border:2px solid #ffb300;border-radius:8px;padding:8px 14px;font:16px sans-serif}';"
+        + "if(document.head&&!document.getElementById('__wtaTvFsStyle'))document.head.appendChild(style);"
+        + "var btn=document.createElement('button');"
+        + "btn.type='button';btn.id='__wtaTvFsBtn';btn.textContent='全屏';"
+        + "btn.onclick=function(){"
+        + "var v=null;var all=document.querySelectorAll('video');"
+        + "for(var i=0;i<all.length;i++){if(!all[i].paused&&!all[i].ended){v=all[i];break;}}"
+        + "if(!v&&all.length)v=all[0];"
+        + "if(!v)return;"
+        + "if(v.requestFullscreen){var p=v.requestFullscreen();if(p&&p.catch)p.catch(function(e){});}"
+        + "else if(v.webkitRequestFullscreen){v.webkitRequestFullscreen();}"
         + "};"
-        + "var tick=function(){"
-        + "tries++;"
-        + "if(document.fullscreenElement||document.webkitFullscreenElement)return;"
-        + "var list=document.getElementsByTagName('video');"
-        + "for(var i=0;i<list.length;i++){"
-        + "var v=list[i];"
-        + "if(v.__wtaTvFsTried||v.paused||v.ended||!v.readyState)continue;"
-        + "if(go(v))return;"
-        + "}"
-        + "if(tries<120)setTimeout(tick,500);"
-        + "};"
-        + "tick();"
+        + "(document.body||document.documentElement).appendChild(btn);"
+        + "btn.focus();"
+        + "try{if(window.WebToApp){var r=btn.getBoundingClientRect();"
+        + "window.WebToApp.setFullscreenButtonRect("
+        + "Math.round((r.left+r.width/2)*(window.devicePixelRatio||1)),"
+        + "Math.round((r.top+r.height/2)*(window.devicePixelRatio||1)));}}catch(e){}"
         + "})();";
 
     // TV remote: give non-TV pages a visible focus cursor, geometric DPAD
@@ -479,6 +483,7 @@ public class M extends Activity {
     ));
 
     private WebView webView;
+    private WebAppBridge webBridge;
     private AppConfig config;
     private PendingDownload pendingDownload;
     private GeolocationPermissions.Callback pendingGeolocationCallback;
@@ -549,7 +554,7 @@ public class M extends Activity {
                     return;
                 }
                 if (config != null && config.tvMode && config.tvAutoFullscreen) {
-                    view.evaluateJavascript(TV_AUTO_FULLSCREEN_JS, null);
+                    view.evaluateJavascript(TV_FULLSCREEN_JS, null);
                 }
                 if (config != null && config.tvMode && config.tvRemote) {
                     view.evaluateJavascript(TV_REMOTE_JS, null);
@@ -605,7 +610,8 @@ public class M extends Activity {
         });
         webView.setWebChromeClient(new AppChromeClient());
         webView.setDownloadListener(new AppDownloadListener());
-        webView.addJavascriptInterface(new WebAppBridge(), "WebToApp");
+        webBridge = new WebAppBridge();
+        webView.addJavascriptInterface(webBridge, "WebToApp");
         WebSettings s = webView.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
@@ -1065,6 +1071,15 @@ public class M extends Activity {
     //   fileName plain file name; path separators are stripped server-side
     //   mimeType e.g. "text/csv"; empty falls back to octet-stream
     private final class WebAppBridge {
+        // Centre of the injected fullscreen button in WebView pixel coords.
+        float fullscreenX = -1f;
+        float fullscreenY = -1f;
+
+        @JavascriptInterface public void setFullscreenButtonRect(float x, float y) {
+            fullscreenX = x;
+            fullscreenY = y;
+        }
+
         @JavascriptInterface public void saveFile(String dataUrl, String fileName, String mimeType) {
             final byte[] data = decodeDataUrl(dataUrl);
             final String safeName = sanitizeFileSegment(fileName);
@@ -1388,9 +1403,21 @@ public class M extends Activity {
                 if (keyCode == KeyEvent.KEYCODE_ENTER
                         || keyCode == KeyEvent.KEYCODE_DPAD_CENTER
                         || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER) {
-                    if (action == KeyEvent.ACTION_DOWN) {
-                        webView.evaluateJavascript(
-                            "typeof __wtaTvActivate==='function'&&__wtaTvActivate()", null);
+                    // evaluateJavascript().click() is not a trusted gesture, so
+                    // Fullscreen API rejects it. Route OK through a real touch
+                    // on the injected button instead; WebView then grants
+                    // user activation and its own fullscreen path kicks in.
+                    if (action == KeyEvent.ACTION_DOWN && webBridge != null
+                            && webBridge.fullscreenX >= 0f && webBridge.fullscreenY >= 0f) {
+                        long t = SystemClock.uptimeMillis();
+                        MotionEvent down = MotionEvent.obtain(
+                            t, t, MotionEvent.ACTION_DOWN,
+                            webBridge.fullscreenX, webBridge.fullscreenY, 0);
+                        webView.dispatchTouchEvent(down);
+                        MotionEvent up = MotionEvent.obtain(
+                            t, t, MotionEvent.ACTION_UP,
+                            webBridge.fullscreenX, webBridge.fullscreenY, 0);
+                        webView.dispatchTouchEvent(up);
                     }
                     return true;
                 }
@@ -1547,7 +1574,7 @@ class ApkBuilder:
     # silently serve a stale cached template — the old hand-bumped constant
     # relied on developers remembering to change it (AGENTS.md even documented
     # a manual cache-delete workaround for exactly that failure mode).
-    TEMPLATE_REVISION = "2026-11-27-tv-smoke-1"
+    TEMPLATE_REVISION = "2026-11-27-tv-gesture-2"
 
     @classmethod
     def _template_revision(cls) -> str:

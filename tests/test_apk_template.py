@@ -95,7 +95,7 @@ def test_immersive_mode_handles_edge_to_edge_enforcement():
 
 
 def test_export_bridge_is_registered():
-    assert 'addJavascriptInterface(new WebAppBridge(), "WebToApp")' in ACTIVITY_JAVA
+    assert 'webView.addJavascriptInterface(webBridge, "WebToApp")' in ACTIVITY_JAVA
     assert "import android.webkit.JavascriptInterface;" in ACTIVITY_JAVA
     assert "@JavascriptInterface public void saveFile(" in ACTIVITY_JAVA
     assert "@JavascriptInterface public void onExportFailed(" in ACTIVITY_JAVA
@@ -239,16 +239,21 @@ def test_html5_video_fullscreen_is_wired():
     assert "webView.getWebChromeClient().onHideCustomView()" in ACTIVITY_JAVA
 
 
-def test_tv_auto_fullscreen_js_uses_standard_fullscreen_apis():
+def test_tv_fullscreen_uses_a_trusted_click_button():
     block = ACTIVITY_JAVA.split(
-        "private static final String TV_AUTO_FULLSCREEN_JS =", 1)[1].split(
+        "private static final String TV_FULLSCREEN_JS =", 1)[1].split(
         "private WebView webView;", 1)[0]
     js = "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', block))
     assert '"' not in js
     assert "requestFullscreen" in js and "webkitRequestFullscreen" in js
-    assert "getElementsByTagName('video')" in js
+    assert "querySelectorAll('video')" in js
+    assert "__wtaTvFsBtn" in js
     assert "onPageFinished(WebView view, String url)" in ACTIVITY_JAVA
-    assert "view.evaluateJavascript(TV_AUTO_FULLSCREEN_JS, null)" in ACTIVITY_JAVA
+    assert "view.evaluateJavascript(TV_FULLSCREEN_JS, null)" in ACTIVITY_JAVA
+    # Fullscreen API needs user activation; OK is routed through a trusted
+    # touch on the injected button instead of evaluateJavascript().click().
+    assert "MotionEvent.ACTION_DOWN" in ACTIVITY_JAVA
+    assert "setFullscreenButtonRect" in ACTIVITY_JAVA
 
 
 def test_tv_navigation_guard_is_enforced():

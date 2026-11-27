@@ -737,7 +737,7 @@ class StreamingFirstLoadTests(unittest.TestCase):
 
     def test_streaming_assets_are_cache_busted(self):
         self.assertIn("css/style.css?v=20261118-board1", self.html)
-        self.assertIn("js/app.v5.js?v=20261127-tv-p2", self.html)
+        self.assertIn("js/app.v5.js?v=20261127-tv-gesture", self.html)
 
     def test_feedback_board_is_wired(self):
         # #248: nav entry + modal + the board module in app.v5.js.

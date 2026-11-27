@@ -36,7 +36,7 @@
   // made single-language users download ~90% waste and blocked first paint.
   var TRANSLATIONS = {};
   // Bump together with the per-language files' content (cache busting).
-  var LANG_VERSION = '20261127-tv-p2';
+  var LANG_VERSION = '20261127-tv-gesture';
   var loadedLangs = { en: true };
   var pendingLangs = {};
 
